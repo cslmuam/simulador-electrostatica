@@ -11,11 +11,15 @@
 <body>
     <canvas id="simulationCanvas"></canvas>
 
+    <!-- Botón flotante para expandir panel (solo desktop, cuando está colapsado) -->
+    <button id="btnExpandPanel" class="panel-expand-btn" hidden title="Mostrar controles">&#9654;</button>
+
     <!-- Panel de controles (izquierda / drawer inferior en móvil) -->
     <div id="controlPanel" class="glass-panel">
         <div class="mobile-handle" id="mobileHandle">
             <div class="mobile-handle-pill"></div>
         </div>
+        <button id="btnCollapsePanel" class="panel-collapse-btn" title="Ocultar controles">&#9664;</button>
         <h1>Campo Eléctrico</h1>
         <p>Añade cargas al lienzo o arrástralas.</p>
 
@@ -69,6 +73,7 @@
                 <button id="btnUndo" class="action-btn undo-btn" disabled>&#8617; Deshacer</button>
                 <button id="btnClear" class="action-btn">Limpiar lienzo</button>
             </div>
+            <button id="btnShare" class="action-btn share-btn">&#8679; Guardar imagen</button>
         </div>
 
         <div class="info-panel">

@@ -259,7 +259,7 @@ canvas.addEventListener('contextmenu', e => {
 // ─── Touch support ─────────────────────────────────────────────────────────
 
 let _pinchStartDist = 0, _pinchStartZoom = 80;
-let _longPressTimer = 0;
+let _longPressTimer = 0, _wasPinching = false;
 
 function _fakeMouseEvent(type, clientX, clientY, button = 0) {
     return new MouseEvent(type, {clientX, clientY, button, buttons: button === 0 ? 1 : 0, bubbles: true, cancelable: true});
@@ -268,6 +268,7 @@ function _fakeMouseEvent(type, clientX, clientY, button = 0) {
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     if (e.touches.length === 1) {
+        _wasPinching = false;
         const {clientX, clientY} = e.touches[0];
         _longPressTimer = setTimeout(() => {
             const idx = charges.findIndex(c => {
@@ -278,6 +279,8 @@ canvas.addEventListener('touchstart', e => {
         }, 450);
         canvas.dispatchEvent(_fakeMouseEvent('mousedown', clientX, clientY));
     } else if (e.touches.length === 2) {
+        _wasPinching = true;
+        hasMoved = true; // prevent charge placement when fingers lift
         clearTimeout(_longPressTimer);
         _pinchStartDist = Math.hypot(
             e.touches[0].clientX - e.touches[1].clientX,
@@ -311,11 +314,29 @@ canvas.addEventListener('touchmove', e => {
 canvas.addEventListener('touchend', e => {
     e.preventDefault();
     clearTimeout(_longPressTimer);
-    if (e.touches.length === 0 && e.changedTouches.length >= 1) {
-        const {clientX, clientY} = e.changedTouches[0];
-        canvas.dispatchEvent(_fakeMouseEvent('mouseup', clientX, clientY));
+    if (e.touches.length === 0) {
+        if (!_wasPinching && e.changedTouches.length >= 1) {
+            const {clientX, clientY} = e.changedTouches[0];
+            canvas.dispatchEvent(_fakeMouseEvent('mouseup', clientX, clientY));
+        }
+        _wasPinching = false;
     }
 }, {passive: false});
+
+// ─── Save / share image ────────────────────────────────────────────────────
+
+document.getElementById('btnShare').addEventListener('click', () => {
+    canvas.toBlob(async blob => {
+        const file = new File([blob], 'campo-electrico.png', {type: 'image/png'});
+        if (navigator.canShare?.({files: [file]})) {
+            try { await navigator.share({title: 'Campo Eléctrico', files: [file]}); return; } catch {}
+        }
+        const a = Object.assign(document.createElement('a'), {
+            href: URL.createObjectURL(blob), download: 'campo-electrico.png'
+        });
+        a.click(); URL.revokeObjectURL(a.href);
+    }, 'image/png');
+});
 
 // ─── Mobile panel drawer ────────────────────────────────────────────────────
 
@@ -323,6 +344,21 @@ const controlPanel = document.getElementById('controlPanel');
 const mobileHandle = document.getElementById('mobileHandle');
 if (mobileHandle) {
     mobileHandle.addEventListener('click', () => controlPanel.classList.toggle('mobile-open'));
+}
+
+// ─── Desktop panel collapse ────────────────────────────────────────────────
+
+const btnCollapsePanel = document.getElementById('btnCollapsePanel');
+const btnExpandPanel   = document.getElementById('btnExpandPanel');
+if (btnCollapsePanel) {
+    btnCollapsePanel.addEventListener('click', () => {
+        controlPanel.classList.add('desktop-collapsed');
+        btnExpandPanel.hidden = false;
+    });
+    btnExpandPanel.addEventListener('click', () => {
+        controlPanel.classList.remove('desktop-collapsed');
+        btnExpandPanel.hidden = true;
+    });
 }
 
 // ─── Init ──────────────────────────────────────────────────────────────────

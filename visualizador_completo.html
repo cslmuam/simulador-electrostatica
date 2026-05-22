@@ -126,6 +126,36 @@
         .action-btn:disabled { opacity: 0.3; cursor: default; }
         .undo-btn { color: var(--accent-neg); border-color: rgba(0,229,255,0.25); }
         .undo-btn:not(:disabled):hover { background: rgba(0,229,255,0.06); border-color: rgba(0,229,255,0.5); }
+        .share-btn { color: var(--accent-gold); border-color: rgba(255,202,40,0.25); margin-top: 4px; }
+        .share-btn:hover { background: rgba(255,202,40,0.06); border-color: rgba(255,202,40,0.5); }
+
+        /* ── Desktop panel collapse ── */
+        #controlPanel { transition: transform 0.3s ease; }
+        #controlPanel.desktop-collapsed { transform: translateX(calc(-100% - 30px)); }
+        .panel-collapse-btn {
+            display: none;
+            position: absolute; top: 14px; right: 14px;
+            background: transparent; border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-muted); border-radius: 6px; padding: 3px 7px;
+            font-size: 0.7rem; min-height: unset; cursor: pointer; z-index: 1;
+        }
+        .panel-collapse-btn:hover { color: var(--text-main); border-color: rgba(255,255,255,0.3); background: rgba(255,255,255,0.05); }
+        .panel-expand-btn {
+            position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+            z-index: 11; background: var(--panel-bg);
+            backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--panel-border); border-radius: 10px;
+            color: var(--text-main); padding: 14px 10px; font-size: 0.9rem;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+        .panel-expand-btn:hover { background: rgba(30,36,58,0.95); }
+
+        @media print {
+            #controlPanel, #lessonPanel, #challengeBar,
+            .lessons-toggle-btn, .panel-expand-btn { display: none !important; }
+            canvas { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; }
+        }
+        @media (min-width: 641px) { .panel-collapse-btn { display: block; } }
 
         .info-panel {
             background: rgba(0,0,0,0.25);
@@ -411,11 +441,15 @@
 <body>
     <canvas id="simulationCanvas"></canvas>
 
+    <!-- Botón flotante para expandir panel (solo desktop, cuando está colapsado) -->
+    <button id="btnExpandPanel" class="panel-expand-btn" hidden title="Mostrar controles">&#9654;</button>
+
     <!-- Panel de controles (izquierda / drawer inferior en móvil) -->
     <div id="controlPanel" class="glass-panel">
         <div class="mobile-handle" id="mobileHandle">
             <div class="mobile-handle-pill"></div>
         </div>
+        <button id="btnCollapsePanel" class="panel-collapse-btn" title="Ocultar controles">&#9664;</button>
         <h1>Campo Eléctrico</h1>
         <p>Añade cargas al lienzo o arrástralas.</p>
 
@@ -465,6 +499,7 @@
                 <button id="btnUndo" class="action-btn undo-btn" disabled>&#8617; Deshacer</button>
                 <button id="btnClear" class="action-btn">Limpiar lienzo</button>
             </div>
+            <button id="btnShare" class="action-btn share-btn">&#8679; Guardar imagen</button>
         </div>
 
         <div class="info-panel">
@@ -1109,7 +1144,7 @@
     // ─── Touch support ─────────────────────────────────────────────────────────
 
     let _pinchStartDist = 0, _pinchStartZoom = 80;
-    let _longPressTimer = 0;
+    let _longPressTimer = 0, _wasPinching = false;
 
     function _fakeMouseEvent(type, clientX, clientY, button = 0) {
         return new MouseEvent(type, {clientX, clientY, button, buttons: button === 0 ? 1 : 0, bubbles: true, cancelable: true});
@@ -1129,6 +1164,8 @@
             canvas.dispatchEvent(_fakeMouseEvent('mousedown', clientX, clientY));
         } else if (e.touches.length === 2) {
             clearTimeout(_longPressTimer);
+            _wasPinching = true;
+            hasMoved = true;
             _pinchStartDist = Math.hypot(
                 e.touches[0].clientX - e.touches[1].clientX,
                 e.touches[0].clientY - e.touches[1].clientY
@@ -1162,8 +1199,11 @@
         e.preventDefault();
         clearTimeout(_longPressTimer);
         if (e.touches.length === 0 && e.changedTouches.length >= 1) {
-            const {clientX, clientY} = e.changedTouches[0];
-            canvas.dispatchEvent(_fakeMouseEvent('mouseup', clientX, clientY));
+            if (!_wasPinching) {
+                const {clientX, clientY} = e.changedTouches[0];
+                canvas.dispatchEvent(_fakeMouseEvent('mouseup', clientX, clientY));
+            }
+            _wasPinching = false;
         }
     }, {passive: false});
 
@@ -1174,6 +1214,36 @@
     if (mobileHandle) {
         mobileHandle.addEventListener('click', () => controlPanel.classList.toggle('mobile-open'));
     }
+
+    // ─── Desktop panel collapse ─────────────────────────────────────────────────
+
+    const btnCollapsePanel = document.getElementById('btnCollapsePanel');
+    const btnExpandPanel   = document.getElementById('btnExpandPanel');
+    if (btnCollapsePanel) {
+        btnCollapsePanel.addEventListener('click', () => {
+            controlPanel.classList.add('desktop-collapsed');
+            btnExpandPanel.hidden = false;
+        });
+        btnExpandPanel.addEventListener('click', () => {
+            controlPanel.classList.remove('desktop-collapsed');
+            btnExpandPanel.hidden = true;
+        });
+    }
+
+    // ─── Share / save image ─────────────────────────────────────────────────────
+
+    document.getElementById('btnShare').addEventListener('click', () => {
+        canvas.toBlob(async blob => {
+            const file = new File([blob], 'campo-electrico.png', {type: 'image/png'});
+            if (navigator.canShare?.({files: [file]})) {
+                try { await navigator.share({title: 'Campo Eléctrico', files: [file]}); return; } catch {}
+            }
+            const a = Object.assign(document.createElement('a'), {
+                href: URL.createObjectURL(blob), download: 'campo-electrico.png'
+            });
+            a.click(); URL.revokeObjectURL(a.href);
+        }, 'image/png');
+    });
 
     // ─── Init ──────────────────────────────────────────────────────────────────
 
