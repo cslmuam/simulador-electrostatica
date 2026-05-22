@@ -53,6 +53,7 @@ const equipCheckbox    = document.getElementById('showEquipotentials');
 const zoomSlider       = document.getElementById('zoomLevel');
 const zoomValue        = document.getElementById('zoomValue');
 const btnClear         = document.getElementById('btnClear');
+const btnUndo          = document.getElementById('btnUndo');
 const valX   = document.getElementById('valX');
 const valY   = document.getElementById('valY');
 const valEx  = document.getElementById('valEx');
@@ -128,9 +129,29 @@ zoomSlider.addEventListener('input', e => {
     scheduleRender();
 });
 btnClear.addEventListener('click', () => {
+    _saveHistory();
     charges = [];
     cameraX = 0; cameraY = 0;
     scheduleRender();
+});
+
+// ─── Undo history ──────────────────────────────────────────────────────────
+
+const _history = [];
+function _saveHistory() {
+    _history.push(charges.map(c => ({...c})));
+    if (_history.length > 30) _history.shift();
+    btnUndo.disabled = false;
+}
+function undo() {
+    if (!_history.length) return;
+    charges = _history.pop();
+    btnUndo.disabled = _history.length === 0;
+    scheduleRender();
+}
+btnUndo.addEventListener('click', undo);
+document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
 });
 
 // ─── Canvas interaction ────────────────────────────────────────────────────
@@ -206,6 +227,7 @@ canvas.addEventListener('mouseleave', () => {
 
 canvas.addEventListener('mouseup', e => {
     if (!hasMoved && !isDragging) {
+        _saveHistory();
         const sn = getSnappedCoords(e.clientX, e.clientY);
         const cx = width/2 + cameraX, cy = height/2 + cameraY;
         charges.push({
@@ -231,7 +253,7 @@ canvas.addEventListener('contextmenu', e => {
         const dx = e.clientX - c.x, dy = e.clientY - c.y;
         return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 5;
     });
-    if (idx !== -1) { charges.splice(idx, 1); scheduleRender(); }
+    if (idx !== -1) { _saveHistory(); charges.splice(idx, 1); scheduleRender(); }
 });
 
 // ─── Touch support ─────────────────────────────────────────────────────────
@@ -252,7 +274,7 @@ canvas.addEventListener('touchstart', e => {
                 const dx = clientX - c.x, dy = clientY - c.y;
                 return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 14;
             });
-            if (idx !== -1) { charges.splice(idx, 1); hasMoved = true; scheduleRender(); }
+            if (idx !== -1) { _saveHistory(); charges.splice(idx, 1); hasMoved = true; scheduleRender(); }
         }, 450);
         canvas.dispatchEvent(_fakeMouseEvent('mousedown', clientX, clientY));
     } else if (e.touches.length === 2) {

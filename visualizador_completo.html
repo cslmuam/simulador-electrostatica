@@ -114,14 +114,18 @@
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 15px; width: 15px; border-radius: 50%; background: var(--text-main); cursor: pointer; margin-top: -5.5px; box-shadow: 0 0 4px rgba(255,255,255,0.4); }
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 3px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px; }
 
+        .action-row { display: flex; gap: 8px; margin-top: 6px; }
         .action-btn {
+            flex: 1;
             background: transparent;
             color: var(--text-main);
             border: 1px solid rgba(255,255,255,0.2);
             padding: 11px;
-            margin-top: 6px;
         }
         .action-btn:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.4); }
+        .action-btn:disabled { opacity: 0.3; cursor: default; }
+        .undo-btn { color: var(--accent-neg); border-color: rgba(0,229,255,0.25); }
+        .undo-btn:not(:disabled):hover { background: rgba(0,229,255,0.06); border-color: rgba(0,229,255,0.5); }
 
         .info-panel {
             background: rgba(0,0,0,0.25);
@@ -457,7 +461,10 @@
                 <input type="range" id="zoomLevel" min="20" max="400" step="10" value="100">
             </div>
 
-            <button id="btnClear" class="action-btn">Limpiar lienzo</button>
+            <div class="action-row">
+                <button id="btnUndo" class="action-btn undo-btn" disabled>&#8617; Deshacer</button>
+                <button id="btnClear" class="action-btn">Limpiar lienzo</button>
+            </div>
         </div>
 
         <div class="info-panel">
@@ -896,6 +903,7 @@
     const zoomSlider       = document.getElementById('zoomLevel');
     const zoomValue        = document.getElementById('zoomValue');
     const btnClear         = document.getElementById('btnClear');
+    const btnUndo          = document.getElementById('btnUndo');
     const valX   = document.getElementById('valX');
     const valY   = document.getElementById('valY');
     const valEx  = document.getElementById('valEx');
@@ -971,9 +979,29 @@
         scheduleRender();
     });
     btnClear.addEventListener('click', () => {
+        _saveHistory();
         charges = [];
         cameraX = 0; cameraY = 0;
         scheduleRender();
+    });
+
+    // ─── Undo history ──────────────────────────────────────────────────────────
+
+    const _history = [];
+    function _saveHistory() {
+        _history.push(charges.map(c => ({...c})));
+        if (_history.length > 30) _history.shift();
+        btnUndo.disabled = false;
+    }
+    function undo() {
+        if (!_history.length) return;
+        charges = _history.pop();
+        btnUndo.disabled = _history.length === 0;
+        scheduleRender();
+    }
+    btnUndo.addEventListener('click', undo);
+    document.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
     });
 
     // ─── Canvas interaction ────────────────────────────────────────────────────
@@ -1049,6 +1077,7 @@
 
     canvas.addEventListener('mouseup', e => {
         if (!hasMoved && !isDragging) {
+            _saveHistory();
             const sn = getSnappedCoords(e.clientX, e.clientY);
             const cx = width/2 + cameraX, cy = height/2 + cameraY;
             charges.push({
@@ -1074,7 +1103,7 @@
             const dx = e.clientX - c.x, dy = e.clientY - c.y;
             return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 5;
         });
-        if (idx !== -1) { charges.splice(idx, 1); scheduleRender(); }
+        if (idx !== -1) { _saveHistory(); charges.splice(idx, 1); scheduleRender(); }
     });
 
     // ─── Touch support ─────────────────────────────────────────────────────────
@@ -1095,7 +1124,7 @@
                     const dx = clientX - c.x, dy = clientY - c.y;
                     return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 14;
                 });
-                if (idx !== -1) { charges.splice(idx, 1); hasMoved = true; scheduleRender(); }
+                if (idx !== -1) { _saveHistory(); charges.splice(idx, 1); hasMoved = true; scheduleRender(); }
             }, 450);
             canvas.dispatchEvent(_fakeMouseEvent('mousedown', clientX, clientY));
         } else if (e.touches.length === 2) {
