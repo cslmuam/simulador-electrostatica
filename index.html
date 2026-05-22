@@ -11,8 +11,11 @@
 <body>
     <canvas id="simulationCanvas"></canvas>
 
-    <!-- Panel de controles (izquierda) -->
+    <!-- Panel de controles (izquierda / drawer inferior en móvil) -->
     <div id="controlPanel" class="glass-panel">
+        <div class="mobile-handle" id="mobileHandle">
+            <div class="mobile-handle-pill"></div>
+        </div>
         <h1>Campo Eléctrico</h1>
         <p>Añade cargas al lienzo o arrástralas.</p>
 
@@ -75,7 +78,7 @@
         </div>
 
         <div class="legend">
-            <small>Clic para añadir · Arrastrar para mover · Clic derecho para borrar</small>
+            <small id="legendText">Clic para añadir · Arrastrar para mover · Clic derecho para borrar</small>
         </div>
     </div>
 

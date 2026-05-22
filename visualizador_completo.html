@@ -358,20 +358,60 @@
         }
         .exit-challenge-btn:hover { border-color: rgba(255,255,255,0.3); color: var(--text-main); }
 
+        /* ── Mobile handle (hidden on desktop) ── */
+        .mobile-handle { display: none; }
+
         /* ── Responsive ── */
-        @media (max-width: 768px) {
-            #controlPanel { top: auto; bottom: 80px; left: 10px; width: calc(100% - 20px); max-height: 50vh; }
-            .lesson-panel { top: auto; bottom: 80px; right: 10px; width: calc(100% - 20px); max-height: 50vh; }
-            .lessons-toggle-btn { top: auto; bottom: 20px; right: 10px; }
-            .challenge-bar { bottom: 10px; min-width: unset; max-width: calc(100vw - 20px); left: 10px; transform: none; }
+        @media (max-width: 640px) {
+            #controlPanel {
+                position: fixed;
+                bottom: 0; left: 0; right: 0;
+                width: 100%; top: auto;
+                max-height: 75vh;
+                border-radius: 16px 16px 0 0;
+                padding: 0 16px 24px;
+                transform: translateY(calc(100% - 80px));
+                transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+                z-index: 20; overflow-y: auto; gap: 14px;
+            }
+            #controlPanel.mobile-open { transform: translateY(0); }
+            #controlPanel > h1, #controlPanel > p,
+            #controlPanel .legend, #controlPanel .info-panel { display: none; }
+            .mobile-handle {
+                display: flex; flex-direction: column; align-items: center; gap: 8px;
+                cursor: pointer; position: sticky; top: 0;
+                background: var(--panel-bg); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+                margin: 0 -16px; padding: 10px 16px; z-index: 1;
+            }
+            .mobile-handle-pill { width: 36px; height: 4px; background: rgba(255,255,255,0.25); border-radius: 2px; }
+            .charge-btn { padding: 14px 10px; font-size: 0.88rem; }
+            button { min-height: 44px; }
+            .collapsible-btn, .nav-btn, .hint-btn, .icon-btn, .eval-btn, .exit-challenge-btn { min-height: 36px; }
+            input[type=range]::-webkit-slider-thumb { height: 24px; width: 24px; margin-top: -10.5px; }
+            .lesson-panel {
+                top: 0; right: 0; bottom: 0; left: 0;
+                width: 100%; max-height: 100%; border-radius: 0; z-index: 30;
+            }
+            .lesson-panel.hidden { transform: translateX(105%); opacity: 1; }
+            .lessons-toggle-btn { top: 12px; right: 12px; bottom: auto; z-index: 25; padding: 10px 14px; }
+            .lessons-toggle-btn.panel-open { opacity: 0; pointer-events: none; }
+            .challenge-bar {
+                bottom: 88px; left: 8px; right: 8px;
+                min-width: unset; max-width: unset; width: auto; transform: none;
+            }
+            .challenge-bar-content { flex-direction: column; align-items: flex-start; gap: 8px; }
+            .challenge-controls { width: 100%; justify-content: flex-end; }
         }
     </style>
 </head>
 <body>
     <canvas id="simulationCanvas"></canvas>
 
-    <!-- Panel de controles (izquierda) -->
+    <!-- Panel de controles (izquierda / drawer inferior en móvil) -->
     <div id="controlPanel" class="glass-panel">
+        <div class="mobile-handle" id="mobileHandle">
+            <div class="mobile-handle-pill"></div>
+        </div>
         <h1>Campo Eléctrico</h1>
         <p>Añade cargas al lienzo o arrástralas.</p>
 
@@ -430,7 +470,7 @@
         </div>
 
         <div class="legend">
-            <small>Clic para añadir · Arrastrar para mover · Clic derecho para borrar</small>
+            <small id="legendText">Clic para añadir · Arrastrar para mover · Clic derecho para borrar</small>
         </div>
     </div>
 
@@ -1037,12 +1077,85 @@
         if (idx !== -1) { charges.splice(idx, 1); scheduleRender(); }
     });
 
+    // ─── Touch support ─────────────────────────────────────────────────────────
+
+    let _pinchStartDist = 0, _pinchStartZoom = 80;
+    let _longPressTimer = 0;
+
+    function _fakeMouseEvent(type, clientX, clientY, button = 0) {
+        return new MouseEvent(type, {clientX, clientY, button, buttons: button === 0 ? 1 : 0, bubbles: true, cancelable: true});
+    }
+
+    canvas.addEventListener('touchstart', e => {
+        e.preventDefault();
+        if (e.touches.length === 1) {
+            const {clientX, clientY} = e.touches[0];
+            _longPressTimer = setTimeout(() => {
+                const idx = charges.findIndex(c => {
+                    const dx = clientX - c.x, dy = clientY - c.y;
+                    return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 14;
+                });
+                if (idx !== -1) { charges.splice(idx, 1); hasMoved = true; scheduleRender(); }
+            }, 450);
+            canvas.dispatchEvent(_fakeMouseEvent('mousedown', clientX, clientY));
+        } else if (e.touches.length === 2) {
+            clearTimeout(_longPressTimer);
+            _pinchStartDist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            _pinchStartZoom = pixelsPerMeter;
+            isMouseDown = false; isDragging = false; isPanning = false; draggedCharge = null;
+        }
+    }, {passive: false});
+
+    canvas.addEventListener('touchmove', e => {
+        e.preventDefault();
+        clearTimeout(_longPressTimer);
+        if (e.touches.length === 1) {
+            const {clientX, clientY} = e.touches[0];
+            canvas.dispatchEvent(_fakeMouseEvent('mousemove', clientX, clientY));
+        } else if (e.touches.length === 2) {
+            const dist = Math.hypot(
+                e.touches[0].clientX - e.touches[1].clientX,
+                e.touches[0].clientY - e.touches[1].clientY
+            );
+            pixelsPerMeter = Math.max(20, Math.min(400, _pinchStartZoom * dist / _pinchStartDist));
+            zoomSlider.value = pixelsPerMeter;
+            zoomValue.textContent = Math.round(pixelsPerMeter);
+            updateChargePixels();
+            if (challengeActive) updateTargetChargePixels();
+            scheduleRender();
+        }
+    }, {passive: false});
+
+    canvas.addEventListener('touchend', e => {
+        e.preventDefault();
+        clearTimeout(_longPressTimer);
+        if (e.touches.length === 0 && e.changedTouches.length >= 1) {
+            const {clientX, clientY} = e.changedTouches[0];
+            canvas.dispatchEvent(_fakeMouseEvent('mouseup', clientX, clientY));
+        }
+    }, {passive: false});
+
+    // ─── Mobile panel drawer ────────────────────────────────────────────────────
+
+    const controlPanel = document.getElementById('controlPanel');
+    const mobileHandle = document.getElementById('mobileHandle');
+    if (mobileHandle) {
+        mobileHandle.addEventListener('click', () => controlPanel.classList.toggle('mobile-open'));
+    }
+
     // ─── Init ──────────────────────────────────────────────────────────────────
 
     charges.push({x_m: -1.5, y_m: 0, x: 0, y: 0, q: 2, sign:  1});
     charges.push({x_m:  1.5, y_m: 0, x: 0, y: 0, q: 2, sign: -1});
 
     window.addEventListener('load', () => {
+        if ('ontouchstart' in window) {
+            const leg = document.getElementById('legendText');
+            if (leg) leg.textContent = 'Toca para añadir · Arrastra para mover · Mantén pulsado para borrar · Pellizca para zoom';
+        }
         resize();
         setTimeout(resize, 100);
         setTimeout(resize, 500);

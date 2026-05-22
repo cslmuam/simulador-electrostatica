@@ -234,12 +234,86 @@ canvas.addEventListener('contextmenu', e => {
     if (idx !== -1) { charges.splice(idx, 1); scheduleRender(); }
 });
 
+// ─── Touch support ─────────────────────────────────────────────────────────
+
+let _pinchStartDist = 0, _pinchStartZoom = 80;
+let _longPressTimer = 0;
+
+function _fakeMouseEvent(type, clientX, clientY, button = 0) {
+    return new MouseEvent(type, {clientX, clientY, button, buttons: button === 0 ? 1 : 0, bubbles: true, cancelable: true});
+}
+
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+        const {clientX, clientY} = e.touches[0];
+        _longPressTimer = setTimeout(() => {
+            const idx = charges.findIndex(c => {
+                const dx = clientX - c.x, dy = clientY - c.y;
+                return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 14;
+            });
+            if (idx !== -1) { charges.splice(idx, 1); hasMoved = true; scheduleRender(); }
+        }, 450);
+        canvas.dispatchEvent(_fakeMouseEvent('mousedown', clientX, clientY));
+    } else if (e.touches.length === 2) {
+        clearTimeout(_longPressTimer);
+        _pinchStartDist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+        _pinchStartZoom = pixelsPerMeter;
+        isMouseDown = false; isDragging = false; isPanning = false; draggedCharge = null;
+    }
+}, {passive: false});
+
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
+    clearTimeout(_longPressTimer);
+    if (e.touches.length === 1) {
+        const {clientX, clientY} = e.touches[0];
+        canvas.dispatchEvent(_fakeMouseEvent('mousemove', clientX, clientY));
+    } else if (e.touches.length === 2) {
+        const dist = Math.hypot(
+            e.touches[0].clientX - e.touches[1].clientX,
+            e.touches[0].clientY - e.touches[1].clientY
+        );
+        pixelsPerMeter = Math.max(20, Math.min(400, _pinchStartZoom * dist / _pinchStartDist));
+        zoomSlider.value = pixelsPerMeter;
+        zoomValue.textContent = Math.round(pixelsPerMeter);
+        updateChargePixels();
+        if (challengeActive) updateTargetChargePixels();
+        scheduleRender();
+    }
+}, {passive: false});
+
+canvas.addEventListener('touchend', e => {
+    e.preventDefault();
+    clearTimeout(_longPressTimer);
+    if (e.touches.length === 0 && e.changedTouches.length >= 1) {
+        const {clientX, clientY} = e.changedTouches[0];
+        canvas.dispatchEvent(_fakeMouseEvent('mouseup', clientX, clientY));
+    }
+}, {passive: false});
+
+// ─── Mobile panel drawer ────────────────────────────────────────────────────
+
+const controlPanel = document.getElementById('controlPanel');
+const mobileHandle = document.getElementById('mobileHandle');
+if (mobileHandle) {
+    mobileHandle.addEventListener('click', () => controlPanel.classList.toggle('mobile-open'));
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────
 
 charges.push({x_m: -1.5, y_m: 0, x: 0, y: 0, q: 2, sign:  1});
 charges.push({x_m:  1.5, y_m: 0, x: 0, y: 0, q: 2, sign: -1});
 
 window.addEventListener('load', () => {
+    // Adapt legend text for touch devices
+    if ('ontouchstart' in window) {
+        const leg = document.getElementById('legendText');
+        if (leg) leg.textContent = 'Toca para añadir · Arrastra para mover · Mantén pulsado para borrar · Pellizca para zoom';
+    }
     resize();
     setTimeout(resize, 100);
     setTimeout(resize, 500);
