@@ -1,0 +1,1792 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador de Campo Eléctrico</title>
+    <meta name="description" content="Simulación interactiva de líneas de campo eléctrico para configuraciones de cargas puntuales discretas.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(20, 25, 40, 0.75);
+            --panel-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f0f4f8;
+            --text-muted: #8a9bb2;
+            --accent-pos: #ff3b6b;
+            --accent-pos-glow: rgba(255, 59, 107, 0.6);
+            --accent-neg: #00e5ff;
+            --accent-neg-glow: rgba(0, 229, 255, 0.6);
+            --accent-gold: #ffca28;
+            --challenge-color: #ff9800;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+        }
+
+        #simulationCanvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 1;
+        }
+
+        /* ── Glass Panel (shared) ── */
+        .glass-panel {
+            position: absolute;
+            background: var(--panel-bg);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 22px;
+            z-index: 10;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        /* ── Control Panel (left) ── */
+        #controlPanel {
+            top: 20px;
+            left: 20px;
+            width: 310px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.1) transparent;
+        }
+
+        #controlPanel::-webkit-scrollbar { width: 4px; }
+        #controlPanel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+        h1 { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.5px; }
+        h2 { font-size: 1.1rem; font-weight: 600; }
+
+        p, .legend { font-size: 0.82rem; color: var(--text-muted); line-height: 1.45; }
+
+        .controls { display: flex; flex-direction: column; gap: 16px; }
+
+        .charge-selector { display: flex; gap: 10px; }
+
+        button {
+            font-family: inherit;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-weight: 600;
+            font-size: 0.82rem;
+            transition: all 0.2s ease;
+        }
+
+        .charge-btn {
+            flex: 1;
+            background: rgba(255,255,255,0.05);
+            color: var(--text-muted);
+            border: 1px solid transparent;
+        }
+        .charge-btn:hover { background: rgba(255,255,255,0.1); }
+        .charge-btn.active.pos-btn { background: var(--accent-pos-glow); color: #fff; border-color: var(--accent-pos); box-shadow: 0 0 14px var(--accent-pos-glow); }
+        .charge-btn.active.neg-btn { background: var(--accent-neg-glow); color: #0b0f19; border-color: var(--accent-neg); box-shadow: 0 0 14px var(--accent-neg-glow); }
+
+        .slider-group { display: flex; flex-direction: column; gap: 6px; }
+
+        label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 15px; width: 15px; border-radius: 50%; background: var(--text-main); cursor: pointer; margin-top: -5.5px; box-shadow: 0 0 4px rgba(255,255,255,0.4); }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 3px; cursor: pointer; background: rgba(255,255,255,0.2); border-radius: 2px; }
+
+        .action-btn {
+            background: transparent;
+            color: var(--text-main);
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 11px;
+            margin-top: 6px;
+        }
+        .action-btn:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.4); }
+
+        .info-panel {
+            background: rgba(0,0,0,0.25);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 0.82rem;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .info-panel h3 { font-size: 0.85rem; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 4px; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 3px; color: var(--accent-neg); }
+        .info-row span:first-child { color: var(--text-muted); }
+
+        /* ── Lessons toggle button ── */
+        .lessons-toggle-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 11;
+            background: var(--panel-bg);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            color: var(--text-main);
+            padding: 10px 16px;
+            font-size: 0.85rem;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            transition: background 0.2s, box-shadow 0.2s;
+        }
+        .lessons-toggle-btn:hover { background: rgba(30,36,58,0.9); box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
+        .lessons-toggle-btn.panel-open { opacity: 0; pointer-events: none; }
+
+        /* ── Lesson Panel (right) ── */
+        .lesson-panel {
+            top: 20px;
+            right: 20px;
+            width: 340px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.1) transparent;
+            gap: 12px;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .lesson-panel.hidden {
+            transform: translateX(20px);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .lesson-panel::-webkit-scrollbar { width: 4px; }
+        .lesson-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+        .lesson-panel-header { display: flex; justify-content: space-between; align-items: center; }
+
+        .icon-btn {
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 1.2rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+        }
+        .icon-btn:hover { color: var(--text-main); border-color: var(--panel-border); }
+        .icon-btn.small { font-size: 0.95rem; }
+
+        .lesson-list { display: flex; flex-direction: column; gap: 6px; }
+
+        .lesson-item {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 10px;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .lesson-item:hover { background: rgba(255,255,255,0.09); border-color: rgba(255,255,255,0.15); }
+        .lesson-item.active { background: rgba(0,229,255,0.08); border-color: rgba(0,229,255,0.25); }
+
+        .lesson-item-id { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); min-width: 28px; }
+        .lesson-item-title { flex: 1; font-size: 0.82rem; font-weight: 600; line-height: 1.3; }
+        .lesson-difficulty { font-size: 0.65rem; color: var(--accent-gold); white-space: nowrap; }
+
+        .topic-badge {
+            display: inline-block;
+            font-size: 0.65rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(255,255,255,0.07);
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+
+        .lesson-detail {
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .lesson-detail.hidden { display: none; }
+
+        .lesson-detail-header { display: flex; align-items: center; gap: 8px; }
+
+        .lesson-id-badge {
+            font-size: 0.7rem;
+            font-weight: 700;
+            background: rgba(0,229,255,0.15);
+            color: var(--accent-neg);
+            border-radius: 4px;
+            padding: 2px 6px;
+        }
+
+        .lesson-detail h3 { font-size: 1rem; font-weight: 600; line-height: 1.3; }
+        .lesson-objective { font-size: 0.82rem; color: var(--text-muted); line-height: 1.45; }
+
+        .lesson-section { display: flex; flex-direction: column; gap: 4px; }
+
+        .collapsible-btn {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.07);
+            color: var(--text-main);
+            text-align: left;
+            padding: 7px 10px;
+            border-radius: 6px;
+            font-size: 0.78rem;
+        }
+        .collapsible-btn:hover { background: rgba(255,255,255,0.08); }
+
+        .collapsible-body { padding: 8px 4px; font-size: 0.8rem; line-height: 1.5; color: var(--text-muted); }
+        .collapsible-body.hidden { display: none; }
+        .collapsible-body p { margin: 0; }
+
+        .hints-list, .questions-list { padding-left: 16px; display: flex; flex-direction: column; gap: 6px; }
+        .hints-list li, .questions-list li { font-size: 0.8rem; line-height: 1.45; }
+        .hints-list li { list-style: none; padding-left: 0; color: var(--accent-neg); opacity: 0.4; transition: opacity 0.3s; }
+        .hints-list li.revealed { opacity: 1; }
+
+        .hint-btn {
+            margin-top: 6px;
+            background: transparent;
+            border: 1px solid rgba(0,229,255,0.3);
+            color: var(--accent-neg);
+            padding: 5px 10px;
+            font-size: 0.75rem;
+            border-radius: 6px;
+        }
+        .hint-btn:hover { background: rgba(0,229,255,0.08); }
+        .hint-btn:disabled { opacity: 0.3; cursor: default; }
+
+        .lesson-nav { display: flex; gap: 8px; margin-top: 4px; }
+        .nav-btn {
+            flex: 1;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: var(--text-main);
+            padding: 7px;
+            font-size: 0.78rem;
+            border-radius: 7px;
+        }
+        .nav-btn:hover { background: rgba(255,255,255,0.1); }
+        .nav-btn:disabled { opacity: 0.3; cursor: default; }
+
+        .challenge-section { margin-top: 4px; }
+        .challenge-start-btn {
+            width: 100%;
+            background: rgba(255,152,0,0.15);
+            border: 1px solid rgba(255,152,0,0.4);
+            color: var(--challenge-color);
+            padding: 9px;
+            font-size: 0.82rem;
+            border-radius: 8px;
+        }
+        .challenge-start-btn:hover { background: rgba(255,152,0,0.25); }
+
+        /* ── Challenge bar (bottom) ── */
+        .challenge-bar {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 12;
+            background: rgba(15,18,30,0.9);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(255,152,0,0.4);
+            border-radius: 12px;
+            padding: 12px 20px;
+            box-shadow: 0 4px 24px rgba(255,152,0,0.15);
+            min-width: 540px;
+            max-width: calc(100vw - 700px);
+        }
+        .challenge-bar.hidden { display: none; }
+
+        .challenge-bar-content { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+        .challenge-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; color: var(--challenge-color); white-space: nowrap; }
+        .challenge-desc { flex: 1; font-size: 0.8rem; color: var(--text-muted); line-height: 1.3; }
+        .challenge-controls { display: flex; align-items: center; gap: 8px; }
+
+        .eval-btn {
+            background: rgba(255,152,0,0.2);
+            border: 1px solid rgba(255,152,0,0.5);
+            color: var(--challenge-color);
+            padding: 6px 12px;
+            border-radius: 7px;
+            font-size: 0.78rem;
+        }
+        .eval-btn:hover { background: rgba(255,152,0,0.35); }
+
+        .score-display {
+            font-size: 0.82rem;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            white-space: nowrap;
+        }
+        .score-display.hidden { display: none; }
+        .score-display.good { border-color: #4caf50; color: #4caf50; }
+        .score-display.ok   { border-color: var(--accent-gold); color: var(--accent-gold); }
+        .score-display.poor { border-color: var(--accent-pos); color: var(--accent-pos); }
+
+        .exit-challenge-btn {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: var(--text-muted);
+            padding: 6px 10px;
+            border-radius: 7px;
+            font-size: 0.75rem;
+        }
+        .exit-challenge-btn:hover { border-color: rgba(255,255,255,0.3); color: var(--text-main); }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            #controlPanel { top: auto; bottom: 80px; left: 10px; width: calc(100% - 20px); max-height: 50vh; }
+            .lesson-panel { top: auto; bottom: 80px; right: 10px; width: calc(100% - 20px); max-height: 50vh; }
+            .lessons-toggle-btn { top: auto; bottom: 20px; right: 10px; }
+            .challenge-bar { bottom: 10px; min-width: unset; max-width: calc(100vw - 20px); left: 10px; transform: none; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="simulationCanvas"></canvas>
+
+    <!-- Panel de controles (izquierda) -->
+    <div id="controlPanel" class="glass-panel">
+        <h1>Campo Eléctrico</h1>
+        <p>Añade cargas al lienzo o arrástralas.</p>
+
+        <div class="controls">
+            <div class="charge-selector">
+                <button id="btnPositive" class="active charge-btn pos-btn">+ Positiva</button>
+                <button id="btnNegative" class="charge-btn neg-btn">− Negativa</button>
+            </div>
+
+            <div class="slider-group">
+                <label for="chargeMagnitude">Magnitud: <span id="magnitudeValue">1</span> &mu;C</label>
+                <input type="range" id="chargeMagnitude" min="1" max="10" value="1">
+            </div>
+
+            <div class="slider-group">
+                <label for="lineDensity">Densidad de líneas: <span id="densityValue">16</span></label>
+                <input type="range" id="lineDensity" min="8" max="64" step="8" value="16">
+            </div>
+
+            <div class="slider-group">
+                <label><input type="checkbox" id="showGrid" checked style="margin-right:5px;"> Mostrar cuadrícula</label>
+            </div>
+
+            <div class="slider-group">
+                <label><input type="checkbox" id="snapToGrid" checked style="margin-right:5px;"> Anclaje a cuadrícula</label>
+            </div>
+            <div class="slider-group">
+                <label><input type="checkbox" id="showNodalLines" style="margin-right:5px;"> Líneas nodales (V = 0)</label>
+            </div>
+            <div class="slider-group">
+                <label><input type="checkbox" id="showEquipotentials" style="margin-right:5px;"> Equipotenciales múltiples</label>
+            </div>
+            <div class="slider-group">
+                <label><input type="checkbox" id="showNullPoints" style="margin-right:5px;"> Puntos nulos (E = 0)</label>
+            </div>
+
+            <div class="slider-group">
+                <label for="gridSpacing">Espaciado: <span id="gridSpacingValue">0.5</span> m</label>
+                <input type="range" id="gridSpacing" min="0.1" max="2.0" step="0.1" value="0.5">
+            </div>
+            <div class="slider-group">
+                <label for="zoomLevel">Zoom: <span id="zoomValue">100</span>%</label>
+                <input type="range" id="zoomLevel" min="20" max="400" step="10" value="100">
+            </div>
+
+            <button id="btnClear" class="action-btn">Limpiar lienzo</button>
+        </div>
+
+        <div class="info-panel">
+            <h3>Puntero</h3>
+            <div class="info-row"><span>x:</span>   <span><span id="valX">0.00</span> m</span></div>
+            <div class="info-row"><span>y:</span>   <span><span id="valY">0.00</span> m</span></div>
+            <div class="info-row"><span>E<sub>x</sub>:</span> <span><span id="valEx">0.00</span> N/C</span></div>
+            <div class="info-row"><span>E<sub>y</sub>:</span> <span><span id="valEy">0.00</span> N/C</span></div>
+            <div class="info-row"><span>|E|:</span> <span><span id="valEmag">0.00</span> N/C</span></div>
+        </div>
+
+        <div class="legend">
+            <small>Clic para añadir · Arrastrar para mover · Clic derecho para borrar</small>
+        </div>
+    </div>
+
+    <!-- Botón flotante para abrir el panel de lecciones -->
+    <button id="btnToggleLessons" class="lessons-toggle-btn" title="Abrir panel de lecciones">
+        &#9654; Lecciones
+    </button>
+
+    <!-- Panel de lecciones (derecha, colapsable) -->
+    <div id="lessonPanel" class="glass-panel lesson-panel hidden">
+        <div class="lesson-panel-header">
+            <h2>Lecciones</h2>
+            <button id="btnCloseLessons" class="icon-btn" title="Cerrar">&times;</button>
+        </div>
+
+        <div id="lessonList" class="lesson-list"></div>
+
+        <div id="lessonDetail" class="lesson-detail hidden">
+            <div class="lesson-detail-header">
+                <span id="lessonDetailId" class="lesson-id-badge"></span>
+                <button id="btnCloseLesson" class="icon-btn small" title="Cerrar lección">&times;</button>
+            </div>
+            <h3 id="lessonDetailTitle"></h3>
+            <p class="lesson-objective" id="lessonDetailObjective"></p>
+
+            <div class="lesson-section">
+                <button class="collapsible-btn" data-target="theoryBody">Teoría &#9660;</button>
+                <div id="theoryBody" class="collapsible-body hidden">
+                    <p id="lessonDetailTheory"></p>
+                </div>
+            </div>
+
+            <div class="lesson-section">
+                <button class="collapsible-btn" data-target="hintsBody">Pistas &#9660;</button>
+                <div id="hintsBody" class="collapsible-body hidden">
+                    <ul id="lessonDetailHints" class="hints-list"></ul>
+                    <button id="btnNextHint" class="hint-btn">Siguiente pista</button>
+                </div>
+            </div>
+
+            <div class="lesson-section">
+                <button class="collapsible-btn" data-target="questionsBody">Preguntas &#9660;</button>
+                <div id="questionsBody" class="collapsible-body hidden">
+                    <ol id="lessonDetailQuestions" class="questions-list"></ol>
+                </div>
+            </div>
+
+            <div class="lesson-nav">
+                <button id="btnPrevLesson" class="nav-btn">&#8592; Anterior</button>
+                <button id="btnNextLesson" class="nav-btn">Siguiente &#8594;</button>
+            </div>
+
+            <div id="challengeSection" class="challenge-section hidden">
+                <button id="btnStartChallenge" class="challenge-start-btn">&#9654; Iniciar reto</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Barra de reto (aparece durante el modo reto) -->
+    <div id="challengeBar" class="challenge-bar hidden">
+        <div class="challenge-bar-content">
+            <span class="challenge-label">MODO RETO</span>
+            <span id="challengeDesc" class="challenge-desc"></span>
+            <div class="challenge-controls">
+                <button id="btnEvaluate" class="eval-btn">Evaluar similitud</button>
+                <div id="scoreDisplay" class="score-display hidden">
+                    Similitud: <span id="scoreValue">--</span>%
+                </div>
+                <button id="btnExitChallenge" class="exit-challenge-btn">Salir del reto</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ── Lesson data ────────────────────────────────────────────────────────────
+    window.LESSONS = [
+  {
+    "id": "L01",
+    "title": "Una carga puntual positiva: campo radial",
+    "topic": "cargas_puntuales",
+    "difficulty": 1,
+    "physics_scenario": "Colocar una única carga puntual q = +1 nC en el origen (0, 0). Observar las líneas de campo eléctrico saliendo radialmente, el mapa de potencial decreciente con 1/r, y la ausencia de puntos nulos en la región visible.",
+    "charges": [
+      { "x_m": 0, "y_m": 0, "q": 1, "sign": 1 }
+    ],
+    "settings": {
+      "zoom": 80,
+      "lineDensity": 24,
+      "showNodalLines": false,
+      "showNullPoints": false,
+      "showEquipotentials": true
+    },
+    "objective": "Relacionar la estructura radial del campo eléctrico con la Ley de Coulomb y deducir magnitud y posición de una carga puntual a partir de la topología del campo.",
+    "theory": "Una carga puntual positiva q genera un campo E = kq/r² dirigido radialmente hacia afuera, con k ≈ 8.99×10⁹ N·m²/C². El potencial es V = kq/r, función solo de r, por lo que las superficies equipotenciales son esferas (círculos en 2D) centradas en la carga. La relación E = −∇V impone que las líneas de campo sean perpendiculares a las equipotenciales en todo punto. La densidad de líneas de campo es proporcional a |q|: doblar q dobla la densidad.",
+    "hints": [],
+    "questions": [
+      "Si el campo en r₀ vale E₀, expresa E(2r₀) y E(r₀/3) en función de E₀. ¿A qué tasa decae E con la distancia?",
+      "Dos puntos P₁ y P₂ están sobre la misma equipotencial. Demuestra que el trabajo realizado por el campo al mover una carga de prueba q₀ de P₁ a P₂ es nulo, usando W = q₀ΔV.",
+      "El número de líneas de campo emitidas por q=3 es el triple que por q=1 (a igual configuración del slider). Usa este hecho para estimar la magnitud de la carga objetivo antes de colocarla.",
+      "Si en el punto (x₀, y₀) el campo apunta en dirección (cos θ, sin θ), ¿qué concluyes sobre la posición de la carga? Generaliza: ¿cómo determinas la posición de una carga puntual a partir de dos vectores de campo en puntos distintos?"
+    ],
+    "challenge": {
+      "description": "El campo objetivo corresponde a una sola carga positiva descentrada. Los círculos fantasma indican su posición aproximada. Antes de colocarla, estima su magnitud q usando la densidad de líneas de campo del objetivo comparada con la de la configuración base (q=1): el número de líneas emitidas escala linealmente con q. Coloca la carga con la magnitud correcta y verifica que las equipotenciales coinciden.",
+      "target_charges": [
+        { "x_m": 2.0, "y_m": 1.5, "q": 6, "sign": 1 }
+      ]
+    }
+  },
+  {
+    "id": "L02",
+    "title": "Una carga puntual negativa: inversión del campo",
+    "topic": "cargas_puntuales",
+    "difficulty": 1,
+    "physics_scenario": "Colocar una única carga puntual q = -1 nC en el origen (0, 0). Comparar con L01: las líneas de campo apuntan hacia la carga y el potencial es negativo.",
+    "charges": [
+      { "x_m": 0, "y_m": 0, "q": 1, "sign": -1 }
+    ],
+    "settings": {
+      "zoom": 80,
+      "lineDensity": 16,
+      "showNodalLines": false,
+      "showNullPoints": false,
+      "showEquipotentials": true
+    },
+    "objective": "Reconocer cómo el signo de una carga puntual invierte la dirección del campo sin alterar la geometría de las equipotenciales, e inferir signo y magnitud a partir de la topología.",
+    "theory": "El campo de una carga puntual es E = kq/r² r̂, donde el signo de q determina si E apunta radialmente hacia afuera (q>0) o hacia adentro (q<0). El potencial V = kq/r toma valores negativos para q<0, pero las superficies equipotenciales siguen siendo esferas concéntricas. La relación E = −∇V exige que el campo apunte en la dirección de máxima disminución de V, es decir, hacia el mínimo — que aquí está en la propia carga negativa. El flujo eléctrico a través de cualquier superficie cerrada que contenga la carga es Φ = q/ε₀ (Ley de Gauss), negativo si q < 0.",
+    "hints": [],
+    "questions": [
+      "Aplica la Ley de Gauss a una superficie esférica de radio r centrada en la carga q < 0: calcula el flujo Φ = ∮E·dA y despeja E(r). ¿Coincide con la Ley de Coulomb?",
+      "Si V = kq/r con q = −4 μC y r = 2 m, calcula V numéricamente. ¿Qué trabajo realiza el campo al traer una carga de prueba q₀ = +1 μC desde infinito hasta ese punto?",
+      "El campo objetivo tiene una carga negativa descentrada. A partir del patrón de convergencia de las líneas de campo, deduce en qué cuadrante está la carga y si su magnitud es mayor o menor que la de la configuración base.",
+      "Compara visualmente el espaciado de equipotenciales cerca de la carga con el del objetivo. ¿Cómo usas esa diferencia para estimar |q|?"
+    ],
+    "challenge": {
+      "description": "El campo objetivo converge hacia un sumidero negativo descentrado. El fantasma indica posición aproximada y signo (círculo cian). Deduce la magnitud |q| analizando: (1) la densidad de líneas de campo comparada con q=1, (2) el espaciado de equipotenciales. Coloca la carga con el valor correcto y verifica.",
+      "target_charges": [
+        { "x_m": -1.5, "y_m": 1.0, "q": 4, "sign": -1 }
+      ]
+    }
+  },
+  {
+    "id": "L03",
+    "title": "Dipolo eléctrico: dos cargas opuestas",
+    "topic": "principio_superposicion",
+    "difficulty": 2,
+    "physics_scenario": "Colocar q1 = +5 en (-1, 0) y q2 = -5 en (+1, 0). Visualizar las líneas de campo que nacen en la carga positiva y mueren en la negativa, el plano equipotencial V=0 en x=0, y la estructura típica del dipolo.",
+    "charges": [
+      { "x_m": -1, "y_m": 0, "q": 5, "sign": 1 },
+      { "x_m": 1, "y_m": 0, "q": 5, "sign": -1 }
+    ],
+    "settings": {
+      "zoom": 100,
+      "lineDensity": 24,
+      "showNodalLines": true,
+      "showNullPoints": false,
+      "showEquipotentials": true
+    },
+    "objective": "Analizar la estructura del campo de un dipolo simétrico y predecir cómo cambia la topología cuando las magnitudes son desiguales y la orientación es oblicua.",
+    "theory": "Un dipolo eléctrico con cargas ±q separadas por d tiene momento dipolar p = qd dirigido de −q a +q. El campo total es E(r) = E₊(r) + E₋(r) por superposición vectorial. Sobre la mediatriz (perpendicular bisectriz), las componentes axiales se cancelan y queda E antiparalelo a p. A distancias r ≫ d, el campo dipolar decae como 1/r³ (más rápido que el monopolar 1/r²). La línea nodal V=0 es exactamente la mediatriz cuando |q₊| = |q₋|; si las magnitudes son distintas, la línea nodal se desplaza hacia la carga de menor módulo.",
+    "hints": [],
+    "questions": [
+      "En el punto medio entre las dos cargas, calcula E_total vectorialmente usando Coulomb (con q=5, separación total 2 m). Compara el resultado con lo que muestra el vector de campo del simulador en el origen.",
+      "Sobre la mediatriz (eje y), demuestra analíticamente que E_y = 0 en todo punto. ¿Qué implica esto sobre la dirección del campo sobre ese eje?",
+      "Si en el objetivo las magnitudes son desiguales (|q₊| ≠ |q₋|), la línea nodal V=0 ya no coincide con la mediatriz. Activa la visualización de líneas nodales y mide el desplazamiento. ¿Hacia qué carga se desplaza y por qué?",
+      "El potencial en un punto lejano (r ≫ d) sobre la mediatriz es V ≈ −kp·r̂/r². Si en el objetivo p apunta en dirección oblicua, ¿en qué dirección apunta E a gran distancia en el eje x?"
+    ],
+    "challenge": {
+      "description": "El campo objetivo corresponde a un dipolo con magnitudes desiguales y orientación oblicua: los dos fantasmas no están sobre ningún eje cartesiano. La línea nodal V=0 (actívala) no es perpendicular al segmento que une las cargas. Deduce la razón |q₊|/|q₋| a partir del desplazamiento de la línea nodal, coloca las cargas con las magnitudes correctas y calcula el vector momento dipolar resultante p = Σqᵢrᵢ.",
+      "target_charges": [
+        { "x_m": -2.5, "y_m": 0.8, "q": 3, "sign": 1 },
+        { "x_m": 1.5, "y_m": -0.8, "q": 5, "sign": -1 }
+      ]
+    }
+  },
+  {
+    "id": "L04",
+    "title": "Dos cargas iguales: punto nulo entre ellas",
+    "topic": "principio_superposicion",
+    "difficulty": 2,
+    "physics_scenario": "Colocar q1 = +1 en (-2, 0) y q2 = +1 en (+2, 0). Identificar el punto nulo en el origen por simetría y la estructura de campo de repulsión mutua.",
+    "charges": [
+      { "x_m": -2, "y_m": 0, "q": 1, "sign": 1 },
+      { "x_m": 2, "y_m": 0, "q": 1, "sign": 1 }
+    ],
+    "settings": {
+      "zoom": 80,
+      "lineDensity": 16,
+      "showNodalLines": false,
+      "showNullPoints": true,
+      "showEquipotentials": true
+    },
+    "objective": "Localizar puntos nulos del campo mediante superposición vectorial y analizar su estabilidad como punto crítico del potencial.",
+    "theory": "Dos cargas del mismo signo producen un punto nulo en el interior del segmento que las une, donde los campos individuales tienen igual magnitud y direcciones opuestas: kq₁/d₁² = kq₂/d₂² con d₁ + d₂ = D (separación total). Para q₁ = q₂ la solución es d₁ = d₂ = D/2 por simetría. El potencial en ese punto es V = k(q₁/d₁ + q₂/d₂) ≠ 0 — el campo nulo no implica potencial nulo. Por el teorema de Earnshaw (consecuencia de ∇²V = 0 en el vacío), el punto nulo es un punto de silla del potencial: estable en una dirección, inestable en la perpendicular.",
+    "hints": [],
+    "questions": [
+      "Calcula el potencial V en el punto nulo (origen) para q₁ = q₂ = 1 μC en x = ±2 m. ¿Es cero? ¿Por qué E = 0 no implica V = 0?",
+      "Una carga de prueba +q₀ colocada en el punto nulo sobre el eje x: si se desplaza una distancia δ hacia +x, ¿la fuerza neta la regresa al origen o la aleja? Justifica con la condición kq/(d−δ)² vs kq/(d+δ)².",
+      "El objetivo tiene tres fuentes positivas en un triángulo. Con las posiciones que deduces de los fantasmas, escribe la condición vectorial E₁ + E₂ + E₃ = 0 para localizar el punto nulo. ¿Cuántos puntos nulos esperas?",
+      "Para tres cargas positivas no colineales, el número de puntos nulos en el plano es n−1 = 2. Activa la visualización y comprueba que hay exactamente dos. ¿Están dentro o fuera del triángulo que forman las cargas?"
+    ],
+    "challenge": {
+      "description": "El campo objetivo presenta tres fuentes positivas en configuración triangular no equilátera. Los dos puntos nulos (actívalos) no son simétricos respecto a ningún eje. Deduce las magnitudes de cada carga a partir de la posición de los puntos nulos: la condición kΣqᵢ/dᵢ² = 0 vectorialmente restringe las razones. Coloca las tres cargas y verifica que los puntos nulos del simulador coincidan con los del objetivo.",
+      "target_charges": [
+        { "x_m": -3.0, "y_m": 0.0, "q": 2, "sign": 1 },
+        { "x_m": 1.0, "y_m": 1.5, "q": 2, "sign": 1 },
+        { "x_m": 1.0, "y_m": -1.5, "q": 3, "sign": 1 }
+      ]
+    }
+  },
+  {
+    "id": "L05",
+    "title": "Cargas asimétricas: localización del punto nulo",
+    "topic": "principio_superposicion",
+    "difficulty": 2,
+    "physics_scenario": "Colocar q1 = +4 en (-2, 0) y q2 = +1 en (+2, 0). Predecir analíticamente la posición del punto nulo usando kq₁/d₁² = kq₂/d₂² y verificarlo con el simulador.",
+    "charges": [
+      { "x_m": -2, "y_m": 0, "q": 4, "sign": 1 },
+      { "x_m": 2, "y_m": 0, "q": 1, "sign": 1 }
+    ],
+    "settings": {
+      "zoom": 80,
+      "lineDensity": 16,
+      "showNodalLines": false,
+      "showNullPoints": true,
+      "showEquipotentials": true
+    },
+    "objective": "Localizar el punto nulo entre dos cargas positivas desiguales y usar su posición como dato para inferir la razón de magnitudes de una distribución desconocida.",
+    "theory": "El punto nulo entre dos cargas positivas q₁ (en x₁) y q₂ (en x₂) satisface kq₁/d₁² = kq₂/d₂², donde d₁ y d₂ son las distancias de ese punto a cada carga. Esto equivale a d₁/d₂ = √(q₁/q₂). Con d₁ + d₂ = |x₂ − x₁| = D se obtiene d₂ = D/(1 + √(q₁/q₂)), que permite ubicar el punto nulo sin conocer k. Este resultado es un problema inverso útil: si se observa el punto nulo a fracción f del segmento desde q₂, entonces q₁/q₂ = ((1−f)/f)².",
+    "hints": [],
+    "questions": [
+      "Para q₁ = 4 en x = −2 m y q₂ = 1 en x = +2 m, calcula la posición exacta del punto nulo sobre el eje x. Compara con la posición indicada por el simulador.",
+      "El objetivo tiene q₁ y q₂ desconocidas. El punto nulo está a fracción f desde la carga derecha respecto al segmento total. Exprésalo: q₁/q₂ en función de f. Mide f en el simulador y calcula la razón.",
+      "¿Existe un punto nulo fuera del segmento entre las cargas (en la prolongación del eje x)? Argumenta analíticamente por qué no para dos cargas del mismo signo.",
+      "Si q₂ se invierte a −q₂ (manteniendo q₁ > 0), ¿existe punto nulo en el eje x? Si existe, ¿está entre las cargas, a la izquierda o a la derecha? Demuéstralo analíticamente y verifica con el simulador."
+    ],
+    "challenge": {
+      "description": "El campo objetivo tiene dos fuentes positivas sobre el eje x. El punto nulo (actívalo) está ubicado a una fracción f = 1/4 de la separación total medida desde la carga derecha. Usa esta fracción para deducir la razón q₁/q₂ mediante la fórmula q₁/q₂ = ((1−f)/f)². La separación total entre cargas es de 5 m. Determina las posiciones y magnitudes de ambas cargas y verifica que el punto nulo coincide con el objetivo.",
+      "target_charges": [
+        { "x_m": -2.5, "y_m": 0.0, "q": 9, "sign": 1 },
+        { "x_m": 2.5, "y_m": 0.0, "q": 1, "sign": 1 }
+      ]
+    }
+  },
+  {
+    "id": "L06",
+    "title": "Distribución lineal discreta: aproximación a línea cargada",
+    "topic": "distribuciones_continuas",
+    "difficulty": 3,
+    "physics_scenario": "Colocar 5 cargas de +1 equiespaciadas en (-2,0) a (2,0). Observar el campo transversal ~1/r cerca del centro y los efectos de borde en los extremos.",
+    "charges": [
+      { "x_m": -2, "y_m": 0, "q": 1, "sign": 1 },
+      { "x_m": -1, "y_m": 0, "q": 1, "sign": 1 },
+      { "x_m": 0,  "y_m": 0, "q": 1, "sign": 1 },
+      { "x_m": 1,  "y_m": 0, "q": 1, "sign": 1 },
+      { "x_m": 2,  "y_m": 0, "q": 1, "sign": 1 }
+    ],
+    "settings": {
+      "zoom": 80,
+      "lineDensity": 16,
+      "showNodalLines": false,
+      "showNullPoints": false,
+      "showEquipotentials": true
+    },
+    "objective": "Comprender la transición del campo puntual al campo lineal mediante superposición discreta y cuantificar el régimen de validez de cada aproximación.",
+    "theory": "Para N cargas iguales alineadas con separación a, el potencial en un punto del eje perpendicular a distancia y del centro es V(y) = kΣq/√(xᵢ²+y²). Cerca del centro con y ≪ L (L = longitud total), la suma converge al resultado de la línea continua: E_⊥(y) ≈ λ/(2πε₀y), donde λ = Nq/L es la densidad lineal. Para y ≫ L, la distribución se ve como una carga puntual: E ≈ kNq/y². La transición ocurre en y ~ L/2. El potencial de la línea finita en puntos del eje perpendicular es V(y) = 2kλ sinh⁻¹(L/2y), que reduce a kNq/y para y ≫ L y a 2kλ ln(L/y) para y ≪ L.",
+    "hints": [],
+    "questions": [
+      "Para la distribución base (5 cargas, q=1, L=4 m), calcula numéricamente V en el punto (0, 1) sumando V_i = kq/r_i para cada carga. Compara con la aproximación de línea continua V ≈ 2kλ sinh⁻¹(L/2y) con λ = 5q/L.",
+      "¿A qué distancia y* del eje la distribución de 5 cargas se vuelve indistinguible (error < 5%) de una carga puntual Q=5q? Estima y* del simulador y verifica con la condición y* ≫ L.",
+      "El campo objetivo incluye una carga negativa embebida entre positivas. ¿Cómo cambia la forma de las equipotenciales respecto al caso todo-positivo? Deduce la posición y magnitud de la carga negativa antes de leer los fantasmas.",
+      "Calcula la carga neta Q_neta del objetivo. Para Q_neta ≠ 0, ¿cómo decae el potencial a gran distancia? Para Q_neta = 0 con momento dipolar p ≠ 0, ¿cómo decae V? Observa las equipotenciales lejanas y clasifica el régimen."
+    ],
+    "challenge": {
+      "description": "El campo objetivo contiene cinco cargas sobre el eje x, pero la distribución no es uniforme: hay al menos una carga de signo negativo. Las equipotenciales centrales presentan una depresión (región de V bajo) rodeada de V alto. Deduce: (1) el número y posición de cada carga, (2) la carga neta Q_neta, (3) el momento dipolar efectivo p = Σqᵢxᵢ. Verifica que tu configuración reproduce la topología del campo objetivo.",
+      "target_charges": [
+        { "x_m": -2.0, "y_m": 0.0, "q": 2, "sign": 1 },
+        { "x_m": -1.0, "y_m": 0.0, "q": 2, "sign": 1 },
+        { "x_m":  0.0, "y_m": 0.0, "q": 5, "sign": -1 },
+        { "x_m":  1.0, "y_m": 0.0, "q": 2, "sign": 1 },
+        { "x_m":  2.0, "y_m": 0.0, "q": 2, "sign": 1 }
+      ]
+    }
+  },
+  {
+    "id": "L07",
+    "title": "Distribución anular discreta: simetría y perturbaciones",
+    "topic": "distribuciones_continuas",
+    "difficulty": 3,
+    "physics_scenario": "8 cargas de +1 sobre círculo de radio 2 m en ángulos 0°, 45°, ..., 315°. Campo nulo en el centro por simetría; comportamiento tipo carga puntual Q=8q lejos del anillo.",
+    "charges": [
+      { "x_m":  2.000, "y_m":  0.000, "q": 1, "sign": 1 },
+      { "x_m":  1.414, "y_m":  1.414, "q": 1, "sign": 1 },
+      { "x_m":  0.000, "y_m":  2.000, "q": 1, "sign": 1 },
+      { "x_m": -1.414, "y_m":  1.414, "q": 1, "sign": 1 },
+      { "x_m": -2.000, "y_m":  0.000, "q": 1, "sign": 1 },
+      { "x_m": -1.414, "y_m": -1.414, "q": 1, "sign": 1 },
+      { "x_m":  0.000, "y_m": -2.000, "q": 1, "sign": 1 },
+      { "x_m":  1.414, "y_m": -1.414, "q": 1, "sign": 1 }
+    ],
+    "settings": {
+      "zoom": 80,
+      "lineDensity": 16,
+      "showNodalLines": false,
+      "showNullPoints": true,
+      "showEquipotentials": true
+    },
+    "objective": "Cuantificar cómo una perturbación monopolar en una distribución anular rompe la simetría, desplaza el punto nulo y genera un momento dipolar residual medible.",
+    "theory": "En el anillo simétrico de N cargas iguales, el campo en el centro es E=0 exactamente porque cada carga tiene una pareja antipodal que cancela su contribución. Si se reemplaza una carga q₀ por q₀ + Δq, la simetría se rompe y el punto nulo se desplaza desde el origen. El desplazamiento δ puede estimarse linealizando: δ ≈ R·Δq/(N·q₀) para Δq ≪ Nq₀. El momento dipolar residual es |p| = Δq·R, donde R es el radio del anillo. A distancias r ≫ R, el campo pasa de cuadrupolar (escala como 1/r³ para N≥3 con igual carga) a dipolar (1/r²) cuando la perturbación domina.",
+    "hints": [],
+    "questions": [
+      "Para el anillo simétrico (8 cargas, q=1, R=2 m), demuestra que E=0 en el origen emparejando cada carga con su antipodal. ¿La demostración requiere conocer k?",
+      "En el objetivo una carga tiene magnitud Δq adicional respecto a las demás. Mide el desplazamiento δ del punto nulo respecto al origen. Usa δ ≈ R·Δq/(N·q₀) para estimar Δq y compara con el tamaño del fantasma.",
+      "Calcula el momento dipolar residual p = Δq·R para la perturbación estimada. ¿En qué dirección apunta p? ¿Coincide con la dirección del desplazamiento del punto nulo?",
+      "Para r ≫ R, el potencial del anillo perturbado es V ≈ kNq/r + kp·cos(θ)/r². ¿Cómo cambia la tasa de decaimiento del campo respecto al anillo perfecto? Observa las equipotenciales lejanas."
+    ],
+    "challenge": {
+      "description": "El campo objetivo corresponde a un anillo de 8 cargas positivas sobre un círculo de radio 2 m, pero con simetría rota: una de las cargas tiene magnitud diferente. El punto nulo (actívalo) se ha desplazado del origen. Determina: (1) qué carga (posición angular) tiene la perturbación, (2) su magnitud Δq, usando el desplazamiento del punto nulo y la relación δ ≈ R·Δq/(N·q₀). Coloca las 8 cargas con las magnitudes correctas y verifica el desplazamiento del punto nulo.",
+      "target_charges": [
+        { "x_m":  2.000, "y_m":  0.000, "q": 4, "sign": 1 },
+        { "x_m":  1.414, "y_m":  1.414, "q": 1, "sign": 1 },
+        { "x_m":  0.000, "y_m":  2.000, "q": 1, "sign": 1 },
+        { "x_m": -1.414, "y_m":  1.414, "q": 1, "sign": 1 },
+        { "x_m": -2.000, "y_m":  0.000, "q": 1, "sign": 1 },
+        { "x_m": -1.414, "y_m": -1.414, "q": 1, "sign": 1 },
+        { "x_m":  0.000, "y_m": -2.000, "q": 1, "sign": 1 },
+        { "x_m":  1.414, "y_m": -1.414, "q": 1, "sign": 1 }
+      ]
+    }
+  },
+  {
+    "id": "L08",
+    "title": "Reto de ingeniería: inferencia inversa de distribución cuadrupolar",
+    "topic": "reto_diseno",
+    "difficulty": 4,
+    "physics_scenario": "Cuadrupolo planar: +5 en (±2, 0), -5 en (0, ±2). Momento dipolar nulo, cuadrupolar no nulo. Punto nulo en origen, líneas nodales en y=±x. Referencia para que el estudiante diseñe variantes con simetría rota.",
+    "charges": [
+      { "x_m":  2, "y_m":  0, "q": 5, "sign":  1 },
+      { "x_m": -2, "y_m":  0, "q": 5, "sign":  1 },
+      { "x_m":  0, "y_m":  2, "q": 5, "sign": -1 },
+      { "x_m":  0, "y_m": -2, "q": 5, "sign": -1 }
+    ],
+    "settings": {
+      "zoom": 90,
+      "lineDensity": 24,
+      "showNodalLines": true,
+      "showNullPoints": true,
+      "showEquipotentials": true
+    },
+    "objective": "Reconstruir una distribución de carga desconocida a partir de su topología de campo e identificar los invariantes multipolares que caracterizan la configuración.",
+    "theory": "La expansión multipolar del potencial es V(r) = k[Q/r + p·r̂/r² + Σᵢⱼ Qᵢⱼ rᵢrⱼ/(2r⁴) + …]. Para una distribución neutra (Q=0) con momento dipolar p=0, el término dominante lejano es cuadrupolar: V ~ 1/r³, E ~ 1/r⁴. El tensor cuadrupolar Qᵢⱼ = Σₙ qₙ(3rₙᵢrₙⱼ − r²ₙδᵢⱼ)/2 determina la topología del campo. Las líneas nodales V=0 son las curvas donde la suma de potenciales de todas las cargas se anula: dividen el plano en regiones de V>0 y V<0. El teorema de Earnshaw (∇²V = 0 en el vacío) garantiza que ningún punto nulo de E puede ser mínimo estable de energía potencial: siempre es un punto de silla.",
+    "hints": [],
+    "questions": [
+      "Verifica que el momento dipolar p = Σqᵢrᵢ = 0 para el cuadrupolo de referencia. ¿Qué condición de simetría garantiza p=0 sin necesidad de calcular la suma?",
+      "Demuestra que V=0 sobre la recta y=x tomando un punto genérico (a,a): empareja cada carga +5 con una −5 equidistante a (a,a) y muestra que sus contribuciones se cancelan por pares. ¿Esta demostración se mantiene si las magnitudes son distintas?",
+      "El campo objetivo tiene simetría rota: los dos fantasmas negativos tienen magnitudes distintas. Esto implica p ≠ 0. Estima |p| a partir del desplazamiento de las líneas nodales respecto a y=±x y verifica que la dirección de p es consistente con la asimetría.",
+      "Usando ∇²V = 0 (ecuación de Laplace), argumenta por qué el potencial no puede tener un mínimo local en el punto nulo. ¿Qué tipo de punto crítico es (mínimo, máximo, silla)? ¿Cómo lo confirmas observando las equipotenciales alrededor del punto nulo?"
+    ],
+    "challenge": {
+      "description": "El campo objetivo tiene topología cuadrupolar con simetría rota: las cuatro cargas no son de igual magnitud. La carga neta es Q_neta = 0 pero el momento dipolar p ≠ 0: las líneas nodales V=0 (actívalas) no coinciden exactamente con y=±x. A partir de la desviación angular de las líneas nodales y la posición del punto nulo, determina las magnitudes de las cuatro cargas. Verifica que tu configuración satisface Q_neta = 0. El teorema de Earnshaw garantiza que el punto nulo es un punto de silla — compruébalo observando las equipotenciales.",
+      "target_charges": [
+        { "x_m":  2.0, "y_m":  0.0, "q": 5, "sign":  1 },
+        { "x_m": -2.0, "y_m":  0.0, "q": 5, "sign":  1 },
+        { "x_m":  0.0, "y_m":  2.0, "q": 3, "sign": -1 },
+        { "x_m":  0.0, "y_m": -2.0, "q": 7, "sign": -1 }
+      ]
+    }
+  }
+];
+
+    // ── Simulation ─────────────────────────────────────────────────────────
+    const canvas = document.getElementById('simulationCanvas');
+    const ctx = canvas.getContext('2d');
+
+    let width, height;
+
+    // Simulation parameters
+    let pixelsPerMeter = 100;
+    function getEScale() { return 8.99e3 * pixelsPerMeter * pixelsPerMeter; }
+    const stepSize = 2;
+    const maxSteps = 2000;
+    const fieldLineColor = 'rgba(255, 255, 255, 0.35)';
+    const chargeRadiusBase = 12;
+
+    let charges = [];
+    let isDragging = false;
+    let draggedCharge = null;
+    let currentChargeSign = 1;
+    let currentMagnitude = 1;
+    let linesPerCharge = 16;
+
+    let pointerX = 0, pointerY = 0;
+    let pointerX_m = 0, pointerY_m = 0;
+    let showPointer = false;
+    let showGrid   = true;
+    let snapEnabled = true;
+    let gridSpacingMeters = 0.5;
+    let showNodalLines = false;
+    let showNullPoints = false;
+    let showEquipotentials = false;
+
+    let cameraX = 0, cameraY = 0;
+    let isMouseDown = false, isPanning = false, hasMoved = false;
+    let lastMouseX = 0, lastMouseY = 0;
+
+    // Interaction flag: while true, skip expensive grid computations so drag stays fluid.
+    let _interacting = false;
+    let _idleTimer = 0;
+
+    // DOM elements
+    const btnPositive      = document.getElementById('btnPositive');
+    const btnNegative      = document.getElementById('btnNegative');
+    const magSlider        = document.getElementById('chargeMagnitude');
+    const magValue         = document.getElementById('magnitudeValue');
+    const densitySlider    = document.getElementById('lineDensity');
+    const densityValue     = document.getElementById('densityValue');
+    const gridCheckbox     = document.getElementById('showGrid');
+    const snapCheckbox     = document.getElementById('snapToGrid');
+    const gridSlider       = document.getElementById('gridSpacing');
+    const gridValue        = document.getElementById('gridSpacingValue');
+    const nodalCheckbox    = document.getElementById('showNodalLines');
+    const nullCheckbox     = document.getElementById('showNullPoints');
+    const equipCheckbox    = document.getElementById('showEquipotentials');
+    const zoomSlider       = document.getElementById('zoomLevel');
+    const zoomValue        = document.getElementById('zoomValue');
+    const btnClear         = document.getElementById('btnClear');
+    const valX   = document.getElementById('valX');
+    const valY   = document.getElementById('valY');
+    const valEx  = document.getElementById('valEx');
+    const valEy  = document.getElementById('valEy');
+    const valEmag = document.getElementById('valEmag');
+
+    // ─── Coordinate helpers ────────────────────────────────────────────────────
+
+    function updateChargePixels() {
+        const cx = width/2 + cameraX, cy = height/2 + cameraY;
+        for (let c of charges) {
+            c.x = c.x_m * pixelsPerMeter + cx;
+            c.y = -c.y_m * pixelsPerMeter + cy;
+        }
+    }
+
+    function resize() {
+        width  = window.innerWidth;
+        height = window.innerHeight;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width  = width  * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+        updateChargePixels();
+        if (challengeActive) updateTargetChargePixels();
+        scheduleRender();
+    }
+    window.addEventListener('resize', resize);
+
+    // ─── UI listeners ─────────────────────────────────────────────────────────
+
+    btnPositive.addEventListener('click', () => {
+        currentChargeSign = 1;
+        btnPositive.classList.add('active');
+        btnNegative.classList.remove('active');
+    });
+    btnNegative.addEventListener('click', () => {
+        currentChargeSign = -1;
+        btnNegative.classList.add('active');
+        btnPositive.classList.remove('active');
+    });
+    magSlider.addEventListener('input', e => {
+        currentMagnitude = parseInt(e.target.value);
+        magValue.textContent = currentMagnitude;
+    });
+    densitySlider.addEventListener('input', e => {
+        linesPerCharge = parseInt(e.target.value);
+        densityValue.textContent = linesPerCharge;
+        scheduleRender();
+    });
+    gridCheckbox.addEventListener('change', e => { showGrid = e.target.checked; scheduleRender(); });
+    snapCheckbox.addEventListener('change', e => { snapEnabled = e.target.checked; scheduleRender(); });
+    gridSlider.addEventListener('input', e => {
+        gridSpacingMeters = parseFloat(e.target.value);
+        gridValue.textContent = gridSpacingMeters.toFixed(1);
+        scheduleRender();
+    });
+    nodalCheckbox.addEventListener('change', e => { showNodalLines = e.target.checked; scheduleRender(); });
+    nullCheckbox.addEventListener('change',  e => { showNullPoints = e.target.checked; scheduleRender(); });
+    equipCheckbox.addEventListener('change', e => { showEquipotentials = e.target.checked; scheduleRender(); });
+    zoomSlider.addEventListener('input', e => {
+        pixelsPerMeter = parseInt(e.target.value);
+        zoomValue.textContent = pixelsPerMeter;
+        updateChargePixels();
+        if (challengeActive) updateTargetChargePixels();
+        if (showPointer) {
+            const cx = width/2 + cameraX, cy = height/2 + cameraY;
+            pointerX = pointerX_m * pixelsPerMeter + cx;
+            pointerY = -pointerY_m * pixelsPerMeter + cy;
+            const sn = getSnappedCoords(pointerX, pointerY);
+            pointerX = sn.x; pointerY = sn.y;
+        }
+        scheduleRender();
+    });
+    btnClear.addEventListener('click', () => {
+        charges = [];
+        cameraX = 0; cameraY = 0;
+        scheduleRender();
+    });
+
+    // ─── Canvas interaction ────────────────────────────────────────────────────
+
+    function getSnappedCoords(x, y) {
+        if (!snapEnabled) return {x, y};
+        const sp = gridSpacingMeters * pixelsPerMeter;
+        const cx = width/2 + cameraX, cy = height/2 + cameraY;
+        const rx = Math.round((x - cx) / sp) * sp;
+        const ry = Math.round((y - cy) / sp) * sp;
+        return {x: rx + cx, y: ry + cy};
+    }
+
+    canvas.addEventListener('mousedown', e => {
+        isMouseDown = true; hasMoved = false;
+        lastMouseX = e.clientX; lastMouseY = e.clientY;
+        draggedCharge = charges.find(c => {
+            const dx = e.clientX - c.x, dy = e.clientY - c.y;
+            return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 5;
+        });
+        if (draggedCharge) isDragging = true;
+        _interacting = true;
+        clearTimeout(_idleTimer);
+    });
+
+    canvas.addEventListener('mousemove', e => {
+        const mx = e.clientX, my = e.clientY;
+        if (isMouseDown) {
+            const dx = mx - lastMouseX, dy = my - lastMouseY;
+            if (!hasMoved && Math.sqrt(dx*dx + dy*dy) > 3) {
+                hasMoved = true;
+                if (!isDragging) isPanning = true;
+            }
+            if (isPanning) {
+                cameraX += dx; cameraY += dy;
+                updateChargePixels();
+                if (challengeActive) updateTargetChargePixels();
+            }
+        }
+        lastMouseX = mx; lastMouseY = my;
+
+        const sn = getSnappedCoords(mx, my);
+        pointerX = sn.x; pointerY = sn.y;
+        const cx = width/2 + cameraX, cy = height/2 + cameraY;
+        pointerX_m =  (pointerX - cx) / pixelsPerMeter;
+        pointerY_m = -(pointerY - cy) / pixelsPerMeter;
+        showPointer = true;
+
+        if (isDragging && draggedCharge) {
+            draggedCharge.x = pointerX; draggedCharge.y = pointerY;
+            draggedCharge.x_m = pointerX_m; draggedCharge.y_m = pointerY_m;
+        }
+        canvas.style.cursor = (isPanning || draggedCharge) ? 'grabbing' : 'crosshair';
+
+        valX.textContent  = pointerX_m.toFixed(2);
+        valY.textContent  = pointerY_m.toFixed(2);
+        const E = getElectricField(pointerX, pointerY);
+        const ES = getEScale();
+        const realEx = E.x * ES, realEy = -E.y * ES;
+        valEx.textContent  = realEx.toExponential(2);
+        valEy.textContent  = realEy.toExponential(2);
+        valEmag.textContent = Math.sqrt(realEx*realEx + realEy*realEy).toExponential(2);
+
+        scheduleRender();
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+        showPointer = false; isMouseDown = false; isPanning = false;
+        canvas.style.cursor = 'crosshair';
+        _interacting = false;
+        scheduleRender();
+    });
+
+    canvas.addEventListener('mouseup', e => {
+        if (!hasMoved && !isDragging) {
+            const sn = getSnappedCoords(e.clientX, e.clientY);
+            const cx = width/2 + cameraX, cy = height/2 + cameraY;
+            charges.push({
+                x_m: (sn.x - cx) / pixelsPerMeter,
+                y_m: -(sn.y - cy) / pixelsPerMeter,
+                x: sn.x, y: sn.y,
+                q: currentMagnitude, sign: currentChargeSign,
+            });
+        }
+        isMouseDown = false; isDragging = false; isPanning = false;
+        draggedCharge = null;
+        canvas.style.cursor = 'crosshair';
+        // End interaction: render fast frame now, then full-quality after 80 ms.
+        _interacting = false;
+        scheduleRender();
+        _idleTimer = setTimeout(scheduleRender, 80);
+    });
+
+    // Right-click to delete a charge
+    canvas.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        const idx = charges.findIndex(c => {
+            const dx = e.clientX - c.x, dy = e.clientY - c.y;
+            return Math.sqrt(dx*dx + dy*dy) < chargeRadiusBase + c.q * 2 + 5;
+        });
+        if (idx !== -1) { charges.splice(idx, 1); scheduleRender(); }
+    });
+
+    // ─── Init ──────────────────────────────────────────────────────────────────
+
+    charges.push({x_m: -1.5, y_m: 0, x: 0, y: 0, q: 2, sign:  1});
+    charges.push({x_m:  1.5, y_m: 0, x: 0, y: 0, q: 2, sign: -1});
+
+    window.addEventListener('load', () => {
+        resize();
+        setTimeout(resize, 100);
+        setTimeout(resize, 500);
+        setTimeout(resize, 1000);
+        initLessons();
+        initLessonPanelEvents();
+    });
+
+    // ─── Physics engine ────────────────────────────────────────────────────────
+
+    // Reusable result objects — avoids heap allocation in hot paths.
+    // IMPORTANT: never hold two simultaneous live references from these functions
+    // (except evaluateChallenge, which copies values before the second call).
+    const _Eret = {x: 0, y: 0};
+
+    function getElectricField(x, y) {
+        return getElectricFieldForCharges(x, y, charges);
+    }
+
+    function getElectricFieldForCharges(x, y, chargeList) {
+        let Ex = 0, Ey = 0;
+        for (let i = 0, n = chargeList.length; i < n; i++) {
+            const c = chargeList[i];
+            const dx = x - c.x, dy = y - c.y;
+            const distSq = dx*dx + dy*dy;
+            if (distSq < 1) continue;
+            // Combined: sign*q / r³  (avoids separate sqrt + two divisions)
+            const inv_r3 = (c.sign * c.q) / (distSq * Math.sqrt(distSq));
+            Ex += inv_r3 * dx;
+            Ey += inv_r3 * dy;
+        }
+        _Eret.x = Ex; _Eret.y = Ey;
+        return _Eret;
+    }
+
+    // ─── Field line drawing ────────────────────────────────────────────────────
+
+    // Module-level RK4 intermediates — eliminates object allocation in the inner loop.
+    let _k1x=0, _k1y=0, _k2x=0, _k2y=0, _k3x=0, _k3y=0, _k4x=0, _k4y=0;
+
+    // Cached charge geometry for traceLine (rebuilt each drawFieldLines call).
+    let _traceN = 0;
+    let _traceX = new Float32Array(64), _traceY = new Float32Array(64);
+    let _traceR2 = new Float32Array(64), _traceSQ = new Float32Array(64);
+
+    function _buildTraceCache() {
+        _traceN = charges.length;
+        if (_traceN > _traceX.length) {
+            _traceX = new Float32Array(_traceN); _traceY = new Float32Array(_traceN);
+            _traceR2 = new Float32Array(_traceN); _traceSQ = new Float32Array(_traceN);
+        }
+        for (let i = 0; i < _traceN; i++) {
+            const c = charges[i];
+            _traceX[i] = c.x; _traceY[i] = c.y;
+            const r = chargeRadiusBase + c.q * 2;
+            _traceR2[i] = r * r;
+            _traceSQ[i] = c.sign * c.q;
+        }
+    }
+
+    // Returns false when field is zero; writes to _k1x/_k1y (or whichever caller uses).
+    function _setNormField(x, y, dirSign, outObj) {
+        let Ex = 0, Ey = 0;
+        for (let i = 0; i < _traceN; i++) {
+            const dx = x - _traceX[i], dy = y - _traceY[i];
+            const distSq = dx*dx + dy*dy;
+            if (distSq < 1) continue;
+            const inv_r3 = _traceSQ[i] / (distSq * Math.sqrt(distSq));
+            Ex += inv_r3 * dx; Ey += inv_r3 * dy;
+        }
+        const mag2 = Ex*Ex + Ey*Ey;
+        if (mag2 < 1e-24) return false;
+        const invMag = dirSign / Math.sqrt(mag2);
+        outObj.x = Ex * invMag; outObj.y = Ey * invMag;
+        return true;
+    }
+
+    // Shared objects for the 4 RK4 stages (no heap allocation per step).
+    const _rk = [{x:0,y:0},{x:0,y:0},{x:0,y:0},{x:0,y:0}];
+
+    function drawFieldLines() {
+        _buildTraceCache();
+        ctx.beginPath();
+        ctx.strokeStyle = fieldLineColor;
+        ctx.lineWidth = 1.2;
+
+        for (let i = 0; i < _traceN; i++) {
+            const c = charges[i];
+            const numLines = linesPerCharge * c.q;
+            const dir = c.sign > 0 ? 1 : -1;
+            const startR = chargeRadiusBase + c.q * 2 + 2;
+            for (let j = 0; j < numLines; j++) {
+                const angle = (j / numLines) * 2 * Math.PI;
+                traceLine(c.x + Math.cos(angle) * startR, c.y + Math.sin(angle) * startR, dir);
+            }
+        }
+        ctx.stroke();
+    }
+
+    function traceLine(startX, startY, dirSign) {
+        let x = startX, y = startY;
+        ctx.moveTo(x, y);
+        for (let step = 0; step < maxSteps; step++) {
+            if (x < 0 || x > width || y < 0 || y > height) break;
+            let hit = false;
+            for (let i = 0; i < _traceN; i++) {
+                const dx = x - _traceX[i], dy = y - _traceY[i];
+                if (dx*dx + dy*dy < _traceR2[i]) { hit = true; break; }
+            }
+            if (hit && step > 5) break;
+
+            if (!_setNormField(x, y, dirSign, _rk[0])) break;
+            const h = stepSize * 0.5;
+            if (!_setNormField(x + h*_rk[0].x, y + h*_rk[0].y, dirSign, _rk[1])) break;
+            if (!_setNormField(x + h*_rk[1].x, y + h*_rk[1].y, dirSign, _rk[2])) break;
+            if (!_setNormField(x + stepSize*_rk[2].x, y + stepSize*_rk[2].y, dirSign, _rk[3])) break;
+
+            x += (stepSize/6) * (_rk[0].x + 2*_rk[1].x + 2*_rk[2].x + _rk[3].x);
+            y += (stepSize/6) * (_rk[0].y + 2*_rk[1].y + 2*_rk[2].y + _rk[3].y);
+            ctx.lineTo(x, y);
+        }
+    }
+
+    // Legacy wrapper (used by drawPointerField and evaluateChallenge via getElectricField).
+    function getNormalizedField(x, y, dirSign) {
+        const E = getElectricField(x, y);
+        const mag = Math.sqrt(E.x*E.x + E.y*E.y);
+        if (mag < 1e-12) return null;
+        return {x: (E.x/mag)*dirSign, y: (E.y/mag)*dirSign};
+    }
+
+    // ─── Marching squares (shared) ─────────────────────────────────────────────
+
+    function marchingSquares(vals, cols, rows, res, V_target, strokeStyle, lineDash) {
+        ctx.beginPath();
+        ctx.strokeStyle = strokeStyle;
+        ctx.lineWidth = 2.2;
+        ctx.setLineDash(lineDash || []);
+
+        const getT = (a, b) => (a - V_target) / (a - b);
+
+        for (let y = 0; y < rows; y++) {
+            for (let x = 0; x < cols; x++) {
+                const v0 = vals[y*(cols+1)+x];
+                const v1 = vals[y*(cols+1)+(x+1)];
+                const v2 = vals[(y+1)*(cols+1)+(x+1)];
+                const v3 = vals[(y+1)*(cols+1)+x];
+                const state = (v0>=V_target?1:0)|(v1>=V_target?2:0)|(v2>=V_target?4:0)|(v3>=V_target?8:0);
+                if (state===0||state===15) continue;
+                const px = x*res, py = y*res;
+                let a=null, b=null;
+                if (state===1||state===14)       { a=[px+res*getT(v0,v1),py];         b=[px,py+res*getT(v0,v3)]; }
+                else if (state===2||state===13)  { a=[px+res*getT(v0,v1),py];         b=[px+res,py+res*getT(v1,v2)]; }
+                else if (state===4||state===11)  { a=[px+res*getT(v3,v2),py+res];     b=[px+res,py+res*getT(v1,v2)]; }
+                else if (state===8||state===7)   { a=[px+res*getT(v3,v2),py+res];     b=[px,py+res*getT(v0,v3)]; }
+                else if (state===3||state===12)  { a=[px,py+res*getT(v0,v3)];         b=[px+res,py+res*getT(v1,v2)]; }
+                else if (state===6||state===9)   { a=[px+res*getT(v0,v1),py];         b=[px+res*getT(v3,v2),py+res]; }
+                else if (state===5) {
+                    ctx.moveTo(px,py+res*getT(v0,v3)); ctx.lineTo(px+res*getT(v0,v1),py);
+                    ctx.moveTo(px+res*getT(v3,v2),py+res); ctx.lineTo(px+res,py+res*getT(v1,v2));
+                } else if (state===10) {
+                    ctx.moveTo(px+res*getT(v0,v1),py); ctx.lineTo(px+res,py+res*getT(v1,v2));
+                    ctx.moveTo(px,py+res*getT(v0,v3)); ctx.lineTo(px+res*getT(v3,v2),py+res);
+                }
+                if (a&&b) { ctx.moveTo(a[0],a[1]); ctx.lineTo(b[0],b[1]); }
+            }
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // Shared resolution for potential grid (used by both nodal and equipotentials).
+    const GRID_RES = 14;
+
+    // Pre-allocated segment buffers for drawEquipotentials — avoids per-frame Float32Array allocation.
+    const _MAX_LEVELS = 40;
+    const _segBufs = Array.from({length: _MAX_LEVELS}, () => new Float32Array(8192));
+    const _segNs   = new Int32Array(_MAX_LEVELS);
+
+    function buildPotentialGrid() {
+        const cols = Math.ceil(width / GRID_RES);
+        const rows = Math.ceil(height / GRID_RES);
+        const w1 = cols + 1;
+        const vals = new Float32Array(w1 * (rows + 1));
+        const n = charges.length;
+        // Cache charge data in flat typed arrays for better cache locality.
+        const cx = new Float32Array(n), cy = new Float32Array(n), cq = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            cx[i] = charges[i].x; cy[i] = charges[i].y;
+            cq[i] = charges[i].sign * charges[i].q;
+        }
+        for (let r = 0; r <= rows; r++) {
+            const py = r * GRID_RES, base = r * w1;
+            for (let c = 0; c <= cols; c++) {
+                const px = c * GRID_RES;
+                let V = 0;
+                for (let i = 0; i < n; i++) {
+                    const dx = px - cx[i], dy = py - cy[i];
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (dist >= 1) V += cq[i] / dist;
+                }
+                vals[base + c] = V;
+            }
+        }
+        return {vals, cols, rows};
+    }
+
+    function drawNodalLines(grid) {
+        if (!showNodalLines || charges.length === 0 || !grid) return;
+        marchingSquares(grid.vals, grid.cols, grid.rows, GRID_RES, 0, 'rgba(0,255,255,0.6)', [5,5]);
+    }
+
+    function drawEquipotentials(grid) {
+        if (!showEquipotentials || charges.length === 0 || !grid) return;
+        const {vals, cols, rows} = grid;
+
+        // Percentile-clip to avoid singularities near charges.
+        const fl = vals.length;
+        let finite = [], fi = 0;
+        for (let i = 0; i < fl; i++) {
+            const v = vals[i];
+            if (isFinite(v) && v < 1e7 && v > -1e7) finite[fi++] = v;
+        }
+        if (fi < 10) return;
+        finite.length = fi;
+        finite.sort((a, b) => a - b);
+        const vMin = finite[fi * 0.08 | 0], vMax = finite[fi * 0.92 | 0];
+        const range = vMax - vMin;
+        if (range < 1e-6) return;
+
+        // Build level descriptors using pre-allocated segment buffers.
+        const numLevels = Math.round(linesPerCharge / 2);
+        const levels = [];
+        let bufIdx = 0;
+        for (let i = 1; i < numLevels; i++) {
+            const V = vMin + (i / numLevels) * range;
+            if (Math.abs(V) < range * 0.02) continue;
+            if (bufIdx >= _MAX_LEVELS) break;
+            _segNs[bufIdx] = 0;
+            levels.push({
+                V,
+                color:  V > 0 ? 'rgba(255,110,110,1.0)' : 'rgba(90,190,255,1.0)',
+                shadow: V > 0 ? 'rgba(255,80,80,0.4)'   : 'rgba(60,160,255,0.4)',
+                bi: bufIdx++,
+            });
+        }
+        if (levels.length === 0) return;
+
+        // Single grid pass — collect segments for every level simultaneously.
+        const NL = levels.length, w1 = cols + 1;
+        for (let ry = 0; ry < rows; ry++) {
+            const py = ry * GRID_RES, base0 = ry * w1, base1 = (ry + 1) * w1;
+            for (let rx = 0; rx < cols; rx++) {
+                const v0 = vals[base0 + rx],     v1 = vals[base0 + rx + 1];
+                const v2 = vals[base1 + rx + 1], v3 = vals[base1 + rx];
+                const px = rx * GRID_RES;
+                for (let li = 0; li < NL; li++) {
+                    const lv = levels[li], V = lv.V;
+                    const b0 = v0 >= V, b1 = v1 >= V, b2 = v2 >= V, b3 = v3 >= V;
+                    const state = (b0 ? 1 : 0) | (b1 ? 2 : 0) | (b2 ? 4 : 0) | (b3 ? 8 : 0);
+                    if (state === 0 || state === 15) continue;
+
+                    // Edge intersection points (computed lazily via switch).
+                    const R = GRID_RES;
+                    let ax, ay, bx, by, ax2, ay2, bx2, by2, two = false;
+                    switch (state) {
+                        case  1: case 14: ax=px+R*(v0-V)/(v0-v1); ay=py;   bx=px;   by=py+R*(v0-V)/(v0-v3); break;
+                        case  2: case 13: ax=px+R*(v0-V)/(v0-v1); ay=py;   bx=px+R; by=py+R*(v1-V)/(v1-v2); break;
+                        case  4: case 11: ax=px+R*(v3-V)/(v3-v2); ay=py+R; bx=px+R; by=py+R*(v1-V)/(v1-v2); break;
+                        case  8: case  7: ax=px+R*(v3-V)/(v3-v2); ay=py+R; bx=px;   by=py+R*(v0-V)/(v0-v3); break;
+                        case  3: case 12: ax=px;                  ay=py+R*(v0-V)/(v0-v3); bx=px+R; by=py+R*(v1-V)/(v1-v2); break;
+                        case  6: case  9: ax=px+R*(v0-V)/(v0-v1); ay=py;   bx=px+R*(v3-V)/(v3-v2); by=py+R; break;
+                        case  5:
+                            ax=px; ay=py+R*(v0-V)/(v0-v3); bx=px+R*(v0-V)/(v0-v1); by=py;
+                            ax2=px+R*(v3-V)/(v3-v2); ay2=py+R; bx2=px+R; by2=py+R*(v1-V)/(v1-v2); two=true; break;
+                        case 10:
+                            ax=px+R*(v0-V)/(v0-v1); ay=py; bx=px+R; by=py+R*(v1-V)/(v1-v2);
+                            ax2=px; ay2=py+R*(v0-V)/(v0-v3); bx2=px+R*(v3-V)/(v3-v2); by2=py+R; two=true; break;
+                        default: continue;
+                    }
+                    const bi = lv.bi;
+                    let ns = _segNs[bi];
+                    const buf = _segBufs[bi];
+                    if (ns + 8 <= buf.length) {
+                        buf[ns]=ax; buf[ns+1]=ay; buf[ns+2]=bx; buf[ns+3]=by;
+                        _segNs[bi] = ns + 4;
+                        if (two && ns + 8 <= buf.length) {
+                            ns += 4;
+                            buf[ns]=ax2; buf[ns+1]=ay2; buf[ns+2]=bx2; buf[ns+3]=by2;
+                            _segNs[bi] = ns + 4;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stroke each level in one batched path.
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([]);
+        ctx.shadowBlur = 3;
+        for (let li = 0; li < NL; li++) {
+            const lv = levels[li], bi = lv.bi, ns = _segNs[bi];
+            if (ns === 0) continue;
+            ctx.strokeStyle = lv.color;
+            ctx.shadowColor = lv.shadow;
+            ctx.beginPath();
+            const s = _segBufs[bi];
+            for (let i = 0; i < ns; i += 4) {
+                ctx.moveTo(s[i], s[i+1]);
+                ctx.lineTo(s[i+2], s[i+3]);
+            }
+            ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        ctx.setLineDash([]);
+    }
+
+    function drawNullPoints() {
+        if (!showNullPoints || charges.length < 2) return;
+        const res = 15;
+        const cols = Math.ceil(width / res);
+        const rows = Math.ceil(height / res);
+        const magSq = new Float32Array(cols * rows);
+        // Use the same typed-array cache as traceLine if already built, else rebuild.
+        if (_traceN !== charges.length) _buildTraceCache();
+        for (let y = 0; y < rows; y++) {
+            const py = y * res;
+            for (let x = 0; x < cols; x++) {
+                const px = x * res;
+                let Ex = 0, Ey = 0;
+                for (let i = 0; i < _traceN; i++) {
+                    const dx = px - _traceX[i], dy = py - _traceY[i];
+                    const distSq = dx*dx + dy*dy;
+                    if (distSq < 1) continue;
+                    const inv_r3 = _traceSQ[i] / (distSq * Math.sqrt(distSq));
+                    Ex += inv_r3 * dx; Ey += inv_r3 * dy;
+                }
+                magSq[y * cols + x] = Ex*Ex + Ey*Ey;
+            }
+        }
+        ctx.strokeStyle = '#39ff14';
+        ctx.lineWidth = 2.5;
+        for (let y = 1; y < rows - 1; y++) {
+            for (let x = 1; x < cols - 1; x++) {
+                const val = magSq[y*cols + x];
+                if (val < magSq[(y-1)*cols+(x-1)] && val < magSq[(y-1)*cols+x] &&
+                    val < magSq[(y-1)*cols+(x+1)] && val < magSq[y*cols+(x-1)] &&
+                    val < magSq[y*cols+(x+1)]     && val < magSq[(y+1)*cols+(x-1)] &&
+                    val < magSq[(y+1)*cols+x]     && val < magSq[(y+1)*cols+(x+1)]) {
+
+                    let px = x*res, py2 = y*res, step = res/2, mv = val;
+                    for (let iter = 0; iter < 15; iter++) {
+                        let bx = px, by = py2;
+                        const offsets = [step,0, -step,0, 0,step, 0,-step,
+                                         step,step, -step,-step, step,-step, -step,step];
+                        for (let k = 0; k < 16; k += 2) {
+                            const tx = px+offsets[k], ty = py2+offsets[k+1];
+                            let Ex2=0, Ey2=0;
+                            for (let i=0; i<_traceN; i++) {
+                                const dx=tx-_traceX[i], dy2=ty-_traceY[i];
+                                const dSq=dx*dx+dy2*dy2; if(dSq<1) continue;
+                                const inv=_traceSQ[i]/(dSq*Math.sqrt(dSq));
+                                Ex2+=inv*dx; Ey2+=inv*dy2;
+                            }
+                            const m = Ex2*Ex2+Ey2*Ey2;
+                            if (m < mv) { mv=m; bx=tx; by=ty; }
+                        }
+                        if (bx === px && by === py2) step /= 2;
+                        else { px = bx; py2 = by; }
+                    }
+                    ctx.beginPath();
+                    ctx.moveTo(px-6, py2-6); ctx.lineTo(px+6, py2+6);
+                    ctx.moveTo(px+6, py2-6); ctx.lineTo(px-6, py2+6);
+                    ctx.stroke();
+                }
+            }
+        }
+    }
+
+    function drawPointerField() {
+        if (!showPointer) return;
+        const E = getElectricField(pointerX, pointerY);
+        const mag = Math.sqrt(E.x*E.x + E.y*E.y);
+        if (mag < 1e-12) return;
+        const len = Math.min(Math.max(Math.log10(mag+1)*15, 20), 80);
+        const dx = (E.x/mag)*len, dy = (E.y/mag)*len;
+
+        ctx.beginPath();
+        ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 2;
+        ctx.moveTo(pointerX, pointerY);
+        ctx.lineTo(pointerX+dx, pointerY+dy);
+        ctx.stroke();
+
+        const angle = Math.atan2(dy, dx);
+        ctx.beginPath(); ctx.fillStyle = '#ffeb3b';
+        ctx.moveTo(pointerX+dx, pointerY+dy);
+        ctx.lineTo(pointerX+dx-10*Math.cos(angle-Math.PI/6), pointerY+dy-10*Math.sin(angle-Math.PI/6));
+        ctx.lineTo(pointerX+dx-10*Math.cos(angle+Math.PI/6), pointerY+dy-10*Math.sin(angle+Math.PI/6));
+        ctx.fill();
+
+        ctx.beginPath(); ctx.fillStyle='#fff';
+        ctx.arc(pointerX, pointerY, 4, 0, 2*Math.PI); ctx.fill();
+    }
+
+    function drawGrid() {
+        if (!showGrid) return;
+        const sp = gridSpacingMeters * pixelsPerMeter;
+        const cx = width/2+cameraX, cy = height/2+cameraY;
+
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.beginPath();
+        let sx = cx%sp; if (sx<0) sx+=sp;
+        for (let x=sx; x<width; x+=sp) { ctx.moveTo(x,0); ctx.lineTo(x,height); }
+        let sy = cy%sp; if (sy<0) sy+=sp;
+        for (let y=sy; y<height; y+=sp) { ctx.moveTo(0,y); ctx.lineTo(width,y); }
+        ctx.stroke();
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.30)'; ctx.beginPath();
+        if (cx>=0&&cx<=width)  { ctx.moveTo(cx,0);     ctx.lineTo(cx,height); }
+        if (cy>=0&&cy<=height) { ctx.moveTo(0,cy);     ctx.lineTo(width,cy); }
+        ctx.stroke();
+    }
+
+    // ─── Challenge mode ────────────────────────────────────────────────────────
+
+    let challengeActive = false;
+    let challengeTargetChargesPx = [];
+
+    function updateTargetChargePixels() {
+        const cx = width/2+cameraX, cy = height/2+cameraY;
+        for (let c of challengeTargetChargesPx) {
+            c.x = c.x_m * pixelsPerMeter + cx;
+            c.y = -c.y_m * pixelsPerMeter + cy;
+        }
+    }
+
+    function startChallenge(lesson) {
+        if (!lesson?.challenge) return;
+        challengeActive = true;
+        challengeTargetChargesPx = lesson.challenge.target_charges.map(c => ({...c, x:0, y:0}));
+        updateTargetChargePixels();
+        charges = [];
+        cameraX = 0; cameraY = 0;
+        updateChargePixels();
+        document.getElementById('challengeDesc').textContent = lesson.challenge.description;
+        document.getElementById('challengeBar').classList.remove('hidden');
+        const sd = document.getElementById('scoreDisplay');
+        sd.classList.add('hidden');
+        sd.className = 'score-display hidden';
+        scheduleRender();
+    }
+
+    function exitChallenge() {
+        challengeActive = false;
+        challengeTargetChargesPx = [];
+        document.getElementById('challengeBar').classList.add('hidden');
+        if (currentLesson) {
+            loadLesson(currentLesson);
+            // Reopen lesson panel so the student can continue
+            document.getElementById('lessonPanel').classList.remove('hidden');
+            document.getElementById('btnToggleLessons').classList.add('panel-open');
+        }
+        scheduleRender();
+    }
+
+    function evaluateChallenge() {
+        const N = 18;
+        const stepX = width/(N+1), stepY = height/(N+1);
+        let total = 0, valid = 0;
+        for (let i=1; i<=N; i++) {
+            for (let j=1; j<=N; j++) {
+                const px = i*stepX, py = j*stepY;
+                // Copy first result before the second call overwrites _Eret.
+                const uE = getElectricFieldForCharges(px, py, charges);
+                const uEx = uE.x, uEy = uE.y;
+                const tE = getElectricFieldForCharges(px, py, challengeTargetChargesPx);
+                const um = Math.sqrt(uEx*uEx + uEy*uEy);
+                const tm = Math.sqrt(tE.x*tE.x + tE.y*tE.y);
+                if (um < 1e-10 || tm < 1e-10) continue;
+                const cos = (uEx*tE.x + uEy*tE.y) / (um*tm);
+                total += Math.max(0, cos);
+                valid++;
+            }
+        }
+        const score = valid > 0 ? Math.round(100*total/valid) : 0;
+        document.getElementById('scoreValue').textContent = score;
+        const sd = document.getElementById('scoreDisplay');
+        sd.classList.remove('hidden', 'good', 'ok', 'poor');
+        sd.classList.add(score>=80 ? 'good' : score>=60 ? 'ok' : 'poor');
+        return score;
+    }
+
+    function drawTargetCharges() {
+        if (!challengeActive || challengeTargetChargesPx.length===0) return;
+        updateTargetChargePixels();
+        for (let c of challengeTargetChargesPx) {
+            const r = chargeRadiusBase + c.q*2;
+            ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, 2*Math.PI);
+            ctx.fillStyle   = c.sign>0 ? 'rgba(255,59,107,0.1)' : 'rgba(0,229,255,0.1)';
+            ctx.strokeStyle = c.sign>0 ? 'rgba(255,59,107,0.5)' : 'rgba(0,229,255,0.5)';
+            ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+            ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+            ctx.fillStyle = c.sign>0 ? 'rgba(255,59,107,0.55)' : 'rgba(0,229,255,0.55)';
+            ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.font = 'bold 14px Inter';
+            ctx.fillText(c.sign>0?'+':'−', c.x, c.y);
+        }
+    }
+
+    // ─── Render ────────────────────────────────────────────────────────────────
+
+    // RAF debounce: coalesce rapid event-driven render() calls into one frame.
+    let _rafPending = false;
+    function scheduleRender() {
+        if (_rafPending) return;
+        _rafPending = true;
+        requestAnimationFrame(() => { _rafPending = false; render(); });
+    }
+
+    function render() {
+        if (width!==window.innerWidth || height!==window.innerHeight) {
+            width=window.innerWidth; height=window.innerHeight;
+            const dpr=window.devicePixelRatio||1;
+            canvas.width=width*dpr; canvas.height=height*dpr;
+            ctx.scale(dpr,dpr);
+            updateChargePixels();
+            if (challengeActive) updateTargetChargePixels();
+        }
+        ctx.clearRect(0, 0, width, height);
+        drawGrid();
+        drawTargetCharges();
+        if (charges.length > 0 || challengeActive) {
+            // During drag/pan skip expensive grid computations — keeps interaction fluid.
+            // A full-quality render fires automatically 80 ms after the mouse is released.
+            const heavy = !_interacting;
+            const needGrid = heavy && (showEquipotentials || showNodalLines);
+            const grid = needGrid ? buildPotentialGrid() : null;
+            drawEquipotentials(grid);
+            drawNodalLines(grid);
+            drawFieldLines();
+            if (heavy) drawNullPoints();
+        }
+        // Draw charges
+        for (let c of charges) {
+            const r = chargeRadiusBase + c.q*2;
+            ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, 2*Math.PI);
+            ctx.shadowBlur = 25;
+            if (c.sign > 0) { ctx.fillStyle='#ff3b6b'; ctx.shadowColor='rgba(255,59,107,1)'; }
+            else             { ctx.fillStyle='#00e5ff'; ctx.shadowColor='rgba(0,229,255,1)'; }
+            ctx.fill(); ctx.shadowBlur=0;
+            ctx.fillStyle = c.sign>0 ? '#fff' : '#0b0f19';
+            ctx.textAlign='center'; ctx.textBaseline='middle';
+            ctx.font='bold 18px Inter';
+            ctx.fillText(c.sign>0?'+':'−', c.x, c.y);
+            ctx.font='600 12px Inter'; ctx.shadowBlur=4; ctx.shadowColor='rgba(0,0,0,0.8)';
+            ctx.fillStyle='rgba(255,255,255,0.9)';
+            ctx.fillText(`${c.sign>0?'+':'−'}${c.q} µC`, c.x, c.y+r+14);
+            ctx.shadowBlur=0;
+        }
+        drawPointerField();
+    }
+
+    // ─── Lesson system ─────────────────────────────────────────────────────────
+
+    let currentLessonIndex = -1;
+    let currentLesson      = null;
+    let hintsRevealed      = 0;
+
+    const TOPIC_LABELS = {
+        cargas_puntuales:        'Cargas puntuales',
+        distribuciones_continuas:'Distribuciones continuas',
+        principio_superposicion: 'Superposición',
+        reto_diseno:             'Reto de diseño',
+    };
+
+    function initLessons() {
+        if (!window.LESSONS?.length) return;
+        const listEl = document.getElementById('lessonList');
+        window.LESSONS.forEach((lesson, idx) => {
+            const item = document.createElement('div');
+            item.className = 'lesson-item';
+            item.dataset.idx = idx;
+            const stars = '★'.repeat(lesson.difficulty) + '☆'.repeat(4-lesson.difficulty);
+            item.innerHTML = `
+                <span class="lesson-item-id">${lesson.id}</span>
+                <div style="flex:1">
+                    <div class="topic-badge">${TOPIC_LABELS[lesson.topic]||lesson.topic}</div>
+                    <div class="lesson-item-title">${lesson.title}</div>
+                </div>
+                <span class="lesson-difficulty" title="Dificultad">${stars}</span>
+            `;
+            item.addEventListener('click', () => selectLesson(idx));
+            listEl.appendChild(item);
+        });
+    }
+
+    function selectLesson(idx) {
+        currentLessonIndex = idx;
+        currentLesson = window.LESSONS[idx];
+        hintsRevealed = 0;
+        document.querySelectorAll('.lesson-item').forEach((el,i) => el.classList.toggle('active', i===idx));
+        loadLesson(currentLesson);
+        showLessonDetail(currentLesson);
+    }
+
+    function loadLesson(lesson) {
+        charges = lesson.charges.map(c => ({...c, x:0, y:0}));
+        const s = lesson.settings;
+        pixelsPerMeter = s.zoom;
+        linesPerCharge = s.lineDensity;
+        showNodalLines     = s.showNodalLines;
+        showNullPoints     = s.showNullPoints;
+        showEquipotentials = s.showEquipotentials ?? false;
+
+        zoomSlider.value    = pixelsPerMeter; zoomValue.textContent    = pixelsPerMeter;
+        densitySlider.value = linesPerCharge; densityValue.textContent = linesPerCharge;
+        nodalCheckbox.checked = showNodalLines;
+        nullCheckbox.checked  = showNullPoints;
+        equipCheckbox.checked = showEquipotentials;
+
+        cameraX = 0; cameraY = 0;
+        updateChargePixels();
+        scheduleRender();
+    }
+
+    function showLessonDetail(lesson) {
+        const detail = document.getElementById('lessonDetail');
+        detail.classList.remove('hidden');
+        document.getElementById('lessonDetailId').textContent        = lesson.id;
+        document.getElementById('lessonDetailTitle').textContent     = lesson.title;
+        document.getElementById('lessonDetailObjective').textContent = lesson.objective;
+        document.getElementById('lessonDetailTheory').textContent    = lesson.theory;
+
+        ['theoryBody','hintsBody','questionsBody'].forEach(id =>
+            document.getElementById(id).classList.add('hidden'));
+
+        const hintsList = document.getElementById('lessonDetailHints');
+        hintsList.innerHTML = '';
+        lesson.hints.forEach((h,i) => {
+            const li = document.createElement('li');
+            li.textContent = h;
+            if (i===0) li.classList.add('revealed');
+            hintsList.appendChild(li);
+        });
+        hintsRevealed = 1;
+        updateHintBtn();
+
+        const qList = document.getElementById('lessonDetailQuestions');
+        qList.innerHTML = '';
+        lesson.questions.forEach(q => {
+            const li = document.createElement('li'); li.textContent = q; qList.appendChild(li);
+        });
+
+        document.getElementById('challengeSection').classList.toggle('hidden', !lesson.challenge);
+        document.getElementById('btnPrevLesson').disabled = currentLessonIndex === 0;
+        document.getElementById('btnNextLesson').disabled = currentLessonIndex === window.LESSONS.length-1;
+
+        // Scroll panel so the detail section is visible
+        requestAnimationFrame(() => {
+            const panel  = document.getElementById('lessonPanel');
+            const detail = document.getElementById('lessonDetail');
+            panel.scrollTo({ top: detail.offsetTop - 12, behavior: 'smooth' });
+        });
+    }
+
+    function updateHintBtn() {
+        const btn = document.getElementById('btnNextHint');
+        const all = currentLesson?.hints.length ?? 0;
+        btn.disabled = hintsRevealed >= all;
+        btn.textContent = hintsRevealed >= all ? 'Todas las pistas mostradas' : 'Siguiente pista';
+    }
+
+    function revealNextHint() {
+        if (!currentLesson || hintsRevealed >= currentLesson.hints.length) return;
+        document.getElementById('lessonDetailHints').children[hintsRevealed]?.classList.add('revealed');
+        hintsRevealed++;
+        updateHintBtn();
+    }
+
+    // ─── Lesson panel events ───────────────────────────────────────────────────
+
+    function initLessonPanelEvents() {
+        const toggleBtn  = document.getElementById('btnToggleLessons');
+        const panel      = document.getElementById('lessonPanel');
+        const closeBtn   = document.getElementById('btnCloseLessons');
+        const closeLsn   = document.getElementById('btnCloseLesson');
+        const prevBtn    = document.getElementById('btnPrevLesson');
+        const nextBtn    = document.getElementById('btnNextLesson');
+        const hintBtn    = document.getElementById('btnNextHint');
+        const startChBtn = document.getElementById('btnStartChallenge');
+        const evalBtn    = document.getElementById('btnEvaluate');
+        const exitChBtn  = document.getElementById('btnExitChallenge');
+
+        function openPanel() {
+            panel.classList.remove('hidden');
+            toggleBtn.classList.add('panel-open');
+        }
+        function closePanel() {
+            panel.classList.add('hidden');
+            toggleBtn.classList.remove('panel-open');
+        }
+
+        toggleBtn.addEventListener('click', openPanel);
+        closeBtn.addEventListener('click', closePanel);
+
+        closeLsn.addEventListener('click', () => {
+            document.getElementById('lessonDetail').classList.add('hidden');
+            document.querySelectorAll('.lesson-item').forEach(el => el.classList.remove('active'));
+            currentLesson = null; currentLessonIndex = -1;
+        });
+
+        prevBtn.addEventListener('click', () => { if (currentLessonIndex>0) selectLesson(currentLessonIndex-1); });
+        nextBtn.addEventListener('click', () => {
+            if (currentLessonIndex < window.LESSONS.length-1) selectLesson(currentLessonIndex+1);
+        });
+
+        hintBtn.addEventListener('click', () => {
+            document.getElementById('hintsBody').classList.remove('hidden');
+            revealNextHint();
+        });
+
+        startChBtn.addEventListener('click', () => {
+            if (currentLesson) startChallenge(currentLesson);
+            closePanel();
+        });
+
+        evalBtn.addEventListener('click', evaluateChallenge);
+        exitChBtn.addEventListener('click', exitChallenge);
+
+        // Collapsibles
+        document.querySelectorAll('.collapsible-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const target = document.getElementById(btn.dataset.target);
+                if (!target) return;
+                const open = !target.classList.contains('hidden');
+                target.classList.toggle('hidden', open);
+                const arrow = open ? '▼' : '▲';
+                btn.textContent = btn.textContent.replace(/[▼▲]/g, arrow);
+            });
+        });
+    }
+
+
+</script>
+</body>
+</html>

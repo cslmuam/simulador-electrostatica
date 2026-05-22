@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador de Campo Eléctrico</title>
+    <meta name="description" content="Simulación interactiva de líneas de campo eléctrico para configuraciones de cargas puntuales discretas.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <canvas id="simulationCanvas"></canvas>
+
+    <!-- Panel de controles (izquierda) -->
+    <div id="controlPanel" class="glass-panel">
+        <h1>Campo Eléctrico</h1>
+        <p>Añade cargas al lienzo o arrástralas.</p>
+
+        <div class="controls">
+            <div class="charge-selector">
+                <button id="btnPositive" class="active charge-btn pos-btn">+ Positiva</button>
+                <button id="btnNegative" class="charge-btn neg-btn">− Negativa</button>
+            </div>
+
+            <div class="slider-group">
+                <label for="chargeMagnitude">Magnitud: <span id="magnitudeValue">1</span> &mu;C</label>
+                <input type="range" id="chargeMagnitude" min="1" max="10" value="1">
+            </div>
+
+            <div class="slider-group">
+                <label for="lineDensity">Densidad de líneas: <span id="densityValue">16</span></label>
+                <input type="range" id="lineDensity" min="8" max="64" step="8" value="16">
+            </div>
+
+            <div class="slider-group">
+                <label><input type="checkbox" id="showGrid" checked style="margin-right:5px;"> Mostrar cuadrícula</label>
+            </div>
+
+            <div class="slider-group">
+                <label><input type="checkbox" id="snapToGrid" checked style="margin-right:5px;"> Anclaje a cuadrícula</label>
+            </div>
+
+            <div class="slider-group">
+                <label><input type="checkbox" id="showNodalLines" style="margin-right:5px;"> Líneas nodales (V = 0)</label>
+            </div>
+
+            <div class="slider-group">
+                <label><input type="checkbox" id="showEquipotentials" style="margin-right:5px;"> Equipotenciales múltiples</label>
+            </div>
+
+            <div class="slider-group">
+                <label><input type="checkbox" id="showNullPoints" style="margin-right:5px;"> Puntos nulos (E = 0)</label>
+            </div>
+
+            <div class="slider-group" id="gridSpacingGroup">
+                <label for="gridSpacing">Espaciado: <span id="gridSpacingValue">0.5</span> m</label>
+                <input type="range" id="gridSpacing" min="0.1" max="2.0" step="0.1" value="0.5">
+            </div>
+
+            <div class="slider-group">
+                <label for="zoomLevel">Zoom: <span id="zoomValue">100</span>%</label>
+                <input type="range" id="zoomLevel" min="20" max="400" step="10" value="100">
+            </div>
+
+            <button id="btnClear" class="action-btn">Limpiar lienzo</button>
+        </div>
+
+        <div class="info-panel">
+            <h3>Puntero</h3>
+            <div class="info-row"><span>x:</span>   <span><span id="valX">0.00</span> m</span></div>
+            <div class="info-row"><span>y:</span>   <span><span id="valY">0.00</span> m</span></div>
+            <div class="info-row"><span>E<sub>x</sub>:</span> <span><span id="valEx">0.00</span> N/C</span></div>
+            <div class="info-row"><span>E<sub>y</sub>:</span> <span><span id="valEy">0.00</span> N/C</span></div>
+            <div class="info-row"><span>|E|:</span> <span><span id="valEmag">0.00</span> N/C</span></div>
+        </div>
+
+        <div class="legend">
+            <small>Clic para añadir · Arrastrar para mover · Clic derecho para borrar</small>
+        </div>
+    </div>
+
+    <!-- Botón flotante para abrir el panel de lecciones -->
+    <button id="btnToggleLessons" class="lessons-toggle-btn" title="Abrir panel de lecciones">
+        &#9654; Lecciones
+    </button>
+
+    <!-- Panel de lecciones (derecha, colapsable) -->
+    <div id="lessonPanel" class="glass-panel lesson-panel hidden">
+        <div class="lesson-panel-header">
+            <h2>Lecciones</h2>
+            <button id="btnCloseLessons" class="icon-btn" title="Cerrar">&times;</button>
+        </div>
+
+        <div id="lessonList" class="lesson-list">
+            <!-- Generado por JS -->
+        </div>
+
+        <!-- Info de la lección activa -->
+        <div id="lessonDetail" class="lesson-detail hidden">
+            <div class="lesson-detail-header">
+                <span id="lessonDetailId" class="lesson-id-badge"></span>
+                <button id="btnCloseLesson" class="icon-btn small" title="Cerrar lección">&times;</button>
+            </div>
+            <h3 id="lessonDetailTitle"></h3>
+            <p class="lesson-objective" id="lessonDetailObjective"></p>
+
+            <div class="lesson-section">
+                <button class="collapsible-btn" data-target="theoryBody">Teoría &#9660;</button>
+                <div id="theoryBody" class="collapsible-body hidden">
+                    <p id="lessonDetailTheory"></p>
+                </div>
+            </div>
+
+            <div class="lesson-section" id="hintsSection">
+                <button class="collapsible-btn" data-target="hintsBody">Pistas &#9660;</button>
+                <div id="hintsBody" class="collapsible-body hidden">
+                    <ul id="lessonDetailHints" class="hints-list"></ul>
+                    <button id="btnNextHint" class="hint-btn">Siguiente pista</button>
+                </div>
+            </div>
+
+            <div class="lesson-section">
+                <button class="collapsible-btn" data-target="questionsBody">Preguntas &#9660;</button>
+                <div id="questionsBody" class="collapsible-body hidden">
+                    <ol id="lessonDetailQuestions" class="questions-list"></ol>
+                </div>
+            </div>
+
+            <div class="lesson-nav">
+                <button id="btnPrevLesson" class="nav-btn">&#8592; Anterior</button>
+                <button id="btnNextLesson" class="nav-btn">Siguiente &#8594;</button>
+            </div>
+
+            <div id="challengeSection" class="challenge-section hidden">
+                <button id="btnStartChallenge" class="challenge-start-btn">&#9654; Iniciar reto</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Barra de reto (aparece durante el modo reto) -->
+    <div id="challengeBar" class="challenge-bar hidden">
+        <div class="challenge-bar-content">
+            <span class="challenge-label">MODO RETO</span>
+            <span id="challengeDesc" class="challenge-desc"></span>
+            <div class="challenge-controls">
+                <button id="btnEvaluate" class="eval-btn">Evaluar similitud</button>
+                <div id="scoreDisplay" class="score-display hidden">
+                    Similitud: <span id="scoreValue">--</span>%
+                </div>
+                <button id="btnExitChallenge" class="exit-challenge-btn">Salir del reto</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="lessons.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
